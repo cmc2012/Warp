@@ -107,14 +107,14 @@ public sealed class BytecodeAssemblyTests
     }
 
     [Fact]
-    public void Assembly_rejects_preselected_short_opcode()
+    public void Assembly_accepts_preselected_short_opcode()
     {
         var function = Function([
             Instruction("push_i8", new BytecodeAssemblySignedOperand(1)),
             Instruction("return"),
         ]);
 
-        Assert.Throws<InvalidOperationException>(() => BytecodeAssemblyVerifier.Verify(function));
+        BytecodeAssemblyVerifier.Verify(function);
     }
 
     [Theory]
@@ -146,6 +146,19 @@ public sealed class BytecodeAssemblyTests
             Assert.DoesNotContain("IrFunctionObject", typeName, StringComparison.Ordinal);
             Assert.DoesNotContain("BytecodeObjectAtom", typeName, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void Object_structure_reader_skips_non_function_constant_pool_values()
+    {
+        var bytes = new Warp.JsCompiler.Api.JavaScriptCompiler().Compile(new Warp.JsCompiler.Api.JavaScriptCompilationRequest(
+            "export const data = { name: '值', items: [1, 2] }; export function make() { return () => data; }",
+            "object-reader.js", Warp.JsCompiler.Api.JavaScriptSourceKind.Module)).Bytes;
+
+        var root = BytecodeObjectStructureReader.ReadRoot(bytes.ToArray());
+
+        Assert.True(root.BytecodeLength > 0);
+        Assert.NotEmpty(root.Constants);
     }
 
     private static BytecodeAssemblyInstruction Instruction(string opcode, BytecodeAssemblyOperand? operand = null) =>

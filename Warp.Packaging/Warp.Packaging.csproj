@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources/Debug/*.pem" />
+    <EmbeddedResource Include="Resources/Zip/jszip.min.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Warp.Diagnostics/Warp.Diagnostics.csproj" />
+  </ItemGroup>
+
+</Project>

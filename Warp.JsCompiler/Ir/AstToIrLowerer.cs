@@ -1205,6 +1205,30 @@ internal sealed class AstToIrLowerer
 
 	private IrBlock VisitIf(IrFunction function, List<ScopeBuilder> scopes, IrScopeId scope, IrBlock block, JsIfStatement conditional, StatementTargets? targets)
 	{
+		if (conditional.Alternate is null && conditional.Test is JsBinaryExpression { Operator: "&&" } logicalAnd)
+		{
+			// In a condition, QuickJS branches through an && chain directly;
+			// materializing its value first adds dup/drop and changes the final
+			// label layout.  Keep this narrowly scoped to an if-without-else,
+			// whose false path is its lexical continuation.
+			var terms = FlattenLogicalChain(logicalAnd, "&&").ToArray();
+			var tests = new List<IrBlock> { block };
+			for (var index = 1; index < terms.Length; index++) tests.Add(NewBlock(function));
+			IrBlock consequent = NewBlock(function);
+			IrBlock exit = NewBlock(function);
+			for (var index = 0; index < terms.Length; index++)
+			{
+				var evaluated = VisitExpression(function, tests[index], scope, terms[index]);
+				evaluated.Terminator = new IrBranchTerminator(
+					index + 1 < tests.Count ? tests[index + 1].Id : consequent.Id,
+					exit.Id, Location(terms[index]));
+			}
+			consequent = VisitStatement(function, scopes, scope, consequent, conditional.Consequent, targets);
+			if (consequent.Terminator is null)
+				consequent.Terminator = new IrGotoTerminator(exit.Id, Location(conditional.Consequent));
+			return exit;
+		}
+
 		block = VisitExpression(function, block, scope, conditional.Test);
 		IrBlock ecmaIrBlock = NewBlock(function);
 		IrBlock ecmaIrBlock2 = ecmaIrBlock;
@@ -2245,16 +2269,27 @@ internal sealed class AstToIrLowerer
 	private IrBlock VisitWhile(IrFunction function, List<ScopeBuilder> scopes, IrScopeId scope, IrBlock block, JsWhileStatement loop, StatementTargets? outerTargets, IReadOnlyList<string>? labels = null)
 	{
 		IrBlock ecmaIrBlock = NewBlock(function);
+		IrBlockId id = ecmaIrBlock.Id;
 		block.Terminator = new IrGotoTerminator(ecmaIrBlock.Id, Location(loop));
-		ecmaIrBlock = VisitExpression(function, ecmaIrBlock, scope, loop.Test);
+		IReadOnlyList<JsExpression> conditions = loop.Test is JsBinaryExpression { Operator: "&&" } logical
+			? FlattenLogicalChain(logical, "&&").ToArray()
+			: [loop.Test];
+		var conditionBlocks = new List<IrBlock> { ecmaIrBlock };
+		for (var index = 1; index < conditions.Count; index++) conditionBlocks.Add(NewBlock(function));
 		IrBlock ecmaIrBlock2 = NewBlock(function);
 		IrBlock ecmaIrBlock3 = NewBlock(function);
-		ecmaIrBlock.Terminator = new IrBranchTerminator(ecmaIrBlock2.Id, ecmaIrBlock3.Id, Location(loop.Test));
-		ecmaIrBlock2 = VisitStatement(function, scopes, scope, ecmaIrBlock2, loop.Body, LoopTargets(ecmaIrBlock3.Id, ecmaIrBlock.Id, labels, outerTargets));
+		for (var index = 0; index < conditions.Count; index++)
+		{
+			var condition = VisitExpression(function, conditionBlocks[index], scope, conditions[index]);
+			condition.Terminator = new IrBranchTerminator(
+				index + 1 < conditionBlocks.Count ? conditionBlocks[index + 1].Id : ecmaIrBlock2.Id,
+				ecmaIrBlock3.Id, Location(conditions[index]));
+		}
+		ecmaIrBlock2 = VisitStatement(function, scopes, scope, ecmaIrBlock2, loop.Body, LoopTargets(ecmaIrBlock3.Id, id, labels, outerTargets));
 		IrBlock ecmaIrBlock4 = ecmaIrBlock2;
 		if ((object)ecmaIrBlock4.Terminator == null)
 		{
-			IrTerminator ecmaIrTerminator = (ecmaIrBlock4.Terminator = new IrGotoTerminator(ecmaIrBlock.Id, Location(loop.Body)));
+			IrTerminator ecmaIrTerminator = (ecmaIrBlock4.Terminator = new IrGotoTerminator(id, Location(loop.Body)));
 		}
 		function.Blocks.Remove(ecmaIrBlock3);
 		function.Blocks.Add(ecmaIrBlock3);
@@ -2311,16 +2346,27 @@ internal sealed class AstToIrLowerer
 			return ecmaIrBlock2;
 		}
 		IrBlock ecmaIrBlock3 = NewBlock(function);
+		IrBlockId id2 = ecmaIrBlock3.Id;
 		block.Terminator = new IrGotoTerminator(ecmaIrBlock3.Id, Location(loop));
+		IReadOnlyList<JsExpression> conditions = loop.Test is JsBinaryExpression { Operator: "&&" } logical
+			? FlattenLogicalChain(logical, "&&").ToArray()
+			: loop.Test is null ? [] : [loop.Test];
+		var conditionBlocks = new List<IrBlock> { ecmaIrBlock3 };
+		for (var index = 1; index < conditions.Count; index++) conditionBlocks.Add(NewBlock(function));
 		IrBlock ecmaIrBlock4 = NewBlock(function);
 		IrBlock ecmaIrBlock5 = NewBlock(function);
 		IrBlock ecmaIrBlock6 = NewBlock(function);
 		function.Blocks.Remove(ecmaIrBlock5);
 		function.Blocks.Remove(ecmaIrBlock6);
-		if ((object)loop.Test != null)
+		if (conditions.Count > 0)
 		{
-			ecmaIrBlock3 = VisitExpression(function, ecmaIrBlock3, scope2, loop.Test);
-			ecmaIrBlock3.Terminator = new IrBranchTerminator(ecmaIrBlock4.Id, ecmaIrBlock6.Id, Location(loop.Test));
+			for (var index = 0; index < conditions.Count; index++)
+			{
+				var condition = VisitExpression(function, conditionBlocks[index], scope2, conditions[index]);
+				condition.Terminator = new IrBranchTerminator(
+					index + 1 < conditionBlocks.Count ? conditionBlocks[index + 1].Id : ecmaIrBlock4.Id,
+					ecmaIrBlock6.Id, Location(conditions[index]));
+			}
 		}
 		else
 		{
@@ -2336,7 +2382,7 @@ internal sealed class AstToIrLowerer
 		{
 			ecmaIrBlock5 = ((!(loop.Update is JsUpdateExpression update)) ? VisitDiscardedExpression(function, ecmaIrBlock5, scope2, loop.Update) : EmitUpdate(function, ecmaIrBlock5, scope2, update, valueUsed: false));
 		}
-		ecmaIrBlock5.Terminator = new IrGotoTerminator(ecmaIrBlock3.Id, Location(loop));
+		ecmaIrBlock5.Terminator = new IrGotoTerminator(id2, Location(loop));
 		ecmaIrBlock6.Instructions.Add(new IrInstruction("leave_scope", new ReadOnlySingleElementList<IrOperand>(new IrScopeOperand(scope2)), Location(loop)));
 		function.Blocks.Add(ecmaIrBlock5);
 		function.Blocks.Add(ecmaIrBlock6);
@@ -2868,6 +2914,15 @@ internal sealed class AstToIrLowerer
 
 	private IrBlock VisitExpression(IrFunction function, IrBlock block, IrScopeId scope, JsExpression expression)
 	{
+		// Spread expressions normally get consumed by their enclosing call, array,
+		// object, or constructor lowering.  They can also reach this generic path
+		// while a nested expression is being visited (for example from a rest/spread
+		// argument in a method body).  A spread is not a standalone runtime value;
+		// its operand is the value that the enclosing emitter appends or copies.
+		if (expression is JsSpreadExpression spread)
+		{
+			return VisitExpression(function, block, scope, spread.Argument);
+		}
 		if (ContainsOptionalChain(expression))
 		{
 			return EmitOptionalChain(function, block, scope, expression);
@@ -3400,8 +3455,9 @@ internal sealed class AstToIrLowerer
 			list.Add((item, ecmaIrBlock.Id));
 		}
 		IrBlock ecmaIrBlock2 = ((block.Instructions.Count == 0 && (object)block.Terminator == null) ? block : NewBlock(function));
-		foreach (var item4 in list)
+		for (var index = 0; index < list.Count; index++)
 		{
+			var item4 = list[index];
 			IrBlock item2 = item4.Item1;
 			IrBlockId item3 = item4.Item2;
 			IrBlock ecmaIrBlock3 = item2;
@@ -3409,9 +3465,16 @@ internal sealed class AstToIrLowerer
 			if (1 == 0)
 			{
 			}
+			// A parenthesized middle logical expression retains its own join.
+			// QuickJS routes a preceding short-circuit edge through that join so
+			// the enclosing chain performs the following logical test uniformly.
+			var falseTarget = expression.Operator == "&&" && index + 1 < list.Count &&
+				array[index + 1] is JsBinaryExpression { Operator: "&&" or "||" or "??" }
+				? list[index + 1].Item1.Id
+				: ecmaIrBlock2.Id;
 			IrBranchTerminator terminator = text switch
 			{
-				"&&" => new IrBranchTerminator(item3, ecmaIrBlock2.Id, Location(expression)), 
+				"&&" => new IrBranchTerminator(item3, falseTarget, Location(expression)),
 				"||" => new IrBranchTerminator(ecmaIrBlock2.Id, item3, Location(expression)), 
 				"??" => new IrBranchTerminator(item3, ecmaIrBlock2.Id, Location(expression)), 
 				_ => throw new InvalidOperationException("Unknown logical expression."), 
@@ -3598,9 +3661,13 @@ internal sealed class AstToIrLowerer
 					JsMemberExpression jsMemberExpression4 = jsMemberExpression;
 					block = VisitExpression(function, block, scope, jsMemberExpression4.Object);
 					block = VisitExpression(function, block, scope, jsMemberExpression4.Property);
+					// A computed assignment keeps both the receiver and its canonical
+					// property key alive while the right-hand side is evaluated.  This is
+					// required for plain `target[key] = value` as well as compound forms;
+					// omitting it before a closure RHS produces invalid target bytecode.
+					Emit(block, "to_propkey2", jsMemberExpression4);
 					if (flag4)
 					{
-						Emit(block, "to_propkey2", jsMemberExpression4);
 						Emit(block, "dup2", jsMemberExpression4);
 						Emit(block, "get_array_el", jsMemberExpression4);
 					}

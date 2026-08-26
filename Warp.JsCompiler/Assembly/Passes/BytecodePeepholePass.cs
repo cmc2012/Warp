@@ -176,6 +176,19 @@ internal sealed class BytecodePeepholePass : IBytecodeAssemblyPass
                 consumedRelocations.Add(instruction);
                 continue;
             }
+            // QuickJS resolve_labels: `undefined; return` has a dedicated
+            // opcode and therefore does not materialize a stack value.
+            if (instruction.Opcode.Name == "undefined" && index + 1 < source.Count &&
+                source[index + 1].Opcode.Name == "return")
+            {
+                output.Add(instruction with
+                {
+                    Opcode = TargetOpcodeCatalog.Get("return_undef"),
+                    Operand = null,
+                });
+                index++;
+                continue;
+            }
             if (TryInvertBranchAcrossLabels(source, index, out var inverseTarget, out var gotoIndex))
             {
                 var inverse = instruction.Opcode.Name == "if_false" ? "if_true" : "if_false";

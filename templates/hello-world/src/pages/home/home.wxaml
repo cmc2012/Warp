@@ -1,0 +1,16 @@
+<Page x:Class="Home">
+  <Page.Styles>
+    <Style Selector=".page">
+      <Setter Property="justify-content" Value="center" />
+      <Setter Property="align-items" Value="center" />
+      <Setter Property="height" Value="100%" />
+    </Style>
+    <Style Selector=".message">
+      <Setter Property="font-size" Value="20px" />
+      <Setter Property="color" Value="#ffffff" />
+    </Style>
+  </Page.Styles>
+  <Stack Class="page" Const="true">
+    <Text Class="message" Text="Hello, World!" />
+  </Stack>
+</Page>

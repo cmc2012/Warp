@@ -211,10 +211,9 @@ internal static class BytecodeAssemblyVerifier
             if (instruction.Opcode.Name.StartsWith("scope_", StringComparison.Ordinal) ||
                 instruction.Opcode.Name is "enter_scope" or "leave_scope")
                 throw new InvalidOperationException("Unresolved scope opcode crossed the assembly boundary.");
-            // ECMAScript has no canonical encoding for the optimized empty-string literal.
-            if (instruction.Opcode.EncodingKind == TargetOpcodeEncodingKind.Short &&
-                instruction.Opcode.Name is not ("push_empty_string" or "get_length"))
-                throw new InvalidOperationException("Assembly instructions use canonical or temporary opcodes; layout selects short forms.");
+            // Short opcodes may be emitted directly by a resolver rewrite
+            // (for example a folded local update), or selected later by the
+            // layout pass. Both are valid target bytecode forms.
             VerifyOperand(instruction, constants);
             if (instruction.Opcode.Name == "label" && instruction.Operand is BytecodeAssemblyLabelOperand label &&
                 !labels.Add(label.Label))

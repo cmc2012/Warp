@@ -14,7 +14,7 @@ internal static class BytecodeObjectStructureReader
         reader.Byte();
         var atoms = reader.Uleb();
         for (var index = 0u; index < atoms; index++) reader.String();
-        return reader.Value();
+        return reader.Value() ?? throw new InvalidOperationException("The root object is not a bytecode function.");
     }
 
     private ref struct Reader(byte[] bytes)
@@ -27,13 +27,38 @@ internal static class BytecodeObjectStructureReader
             uint value = 0; var shift = 0;
             while (true) { var next = Byte(); value |= (uint)(next & 0x7f) << shift; if ((next & 0x80) == 0) return value; shift += 7; }
         }
-        internal void String() { var encoded = Uleb(); _offset += checked((int)(encoded >> 1)); }
+        internal void Sleb()
+        {
+            while ((Byte() & 0x80) != 0) { }
+        }
+        internal void String()
+        {
+            var encoded = Uleb();
+            var length = checked((int)(encoded >> 1));
+            _offset += length * ((encoded & 1) == 0 ? 1 : 2);
+        }
         internal uint Atom() => Uleb() >> 1;
-        internal Function Value()
+        internal Function? Value()
         {
             var tag = Byte();
-            if (tag == 15) { Atom(); SkipModule(); return Value(); }
-            if (tag != 14) throw new InvalidOperationException($"Expected function tag at {_offset - 1}.");
+            switch (tag)
+            {
+                case 1 or 2 or 3 or 4: return null;
+                case 5: Sleb(); return null;
+                case 6: _offset += 8; return null;
+                case 7: String(); return null;
+                case 8: SkipObject(); return null;
+                case 9: SkipArray(template: false); return null;
+                case 10 or 11 or 12: String(); return null;
+                case 13: SkipTemplate(); return null;
+                case 15: Atom(); SkipModule(); return Value();
+                case 16: Byte(); Uleb(); Uleb(); Value(); return null;
+                case 17: _offset += checked((int)Uleb()); return null;
+                case 18: Uleb(); _offset += 8; return null;
+                case 19 or 20: Value(); return null;
+                case 21: Uleb(); return null;
+            }
+            if (tag != 14) throw new InvalidOperationException($"Unknown bytecode value tag {tag} at {_offset - 1}.");
             var offset = _offset - 1;
             var flags = (uint)(Byte() | Byte() << 8); Byte(); Atom();
             var args = Uleb(); var vars = Uleb(); Uleb(); Uleb(); var closureCount = Uleb(); var constantCount = Uleb(); var codeLength = Uleb();
@@ -45,8 +70,28 @@ internal static class BytecodeObjectStructureReader
             _offset += checked((int)codeLength);
             if ((flags & (1u << 10)) != 0) { Atom(); Uleb(); _offset += checked((int)Uleb()); }
             var constants = new List<Function>();
-            for (var index = 0u; index < constantCount; index++) constants.Add(Value());
+            for (var index = 0u; index < constantCount; index++)
+            {
+                var constant = Value();
+                if (constant is not null) constants.Add(constant);
+            }
             return new Function(offset, bytecodeOffset, codeLength, args, vars, defs, closures, constants);
+        }
+        private void SkipObject()
+        {
+            for (var count = Uleb(); count != 0; count--) { Atom(); Value(); }
+        }
+        private void SkipArray(bool template)
+        {
+            for (var count = Uleb(); count != 0; count--) Value();
+            if (template) Value();
+        }
+        private void SkipTemplate()
+        {
+            for (var count = Uleb(); count != 0; count--) Value();
+            if (Byte() != 13) throw new InvalidOperationException("Malformed template literal constant.");
+            for (var count = Uleb(); count != 0; count--) Value();
+            Value();
         }
         private void SkipModule()
         {

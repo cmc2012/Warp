@@ -8,7 +8,8 @@ public sealed class DirectoryAndDiagnosticBoundaryTests
 {
     [Fact]
     public async Task Directory_compile_rejects_null_request()
-        => await Assert.ThrowsAsync<ArgumentNullException>(() => new JavaScriptDirectoryCompiler().CompileAsync(null!));
+        => await Assert.ThrowsAsync<ArgumentNullException>(() => new JavaScriptDirectoryCompiler().CompileAsync(
+            null!, TestContext.Current.CancellationToken));
 
     [Fact]
     public async Task Directory_compile_rejects_missing_source_directory()
@@ -38,7 +39,7 @@ public sealed class DirectoryAndDiagnosticBoundaryTests
         var paths = await CompileDirectory(tree.Path("source"), tree.Path("output"));
         var output = Assert.Single(paths);
         Assert.Equal(Path.ChangeExtension(tree.Path("output/" + fileName), ".jsc"), output);
-        Assert.NotEmpty(await File.ReadAllBytesAsync(output));
+        Assert.NotEmpty(await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -166,7 +167,7 @@ public sealed class DirectoryAndDiagnosticBoundaryTests
         tree.Write("source/entry.js", "const value = 1;");
         tree.WriteBytes("output/entry.jsc", [1, 2, 3]);
         var output = Assert.Single(await CompileDirectory(tree.Path("source"), tree.Path("output")));
-        Assert.NotEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(output));
+        Assert.NotEqual(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -261,7 +262,8 @@ public sealed class DirectoryAndDiagnosticBoundaryTests
         Func<JavaScriptDirectoryCompilationRequest, JavaScriptDirectoryCompilationRequest>? configure = null)
     {
         var request = new JavaScriptDirectoryCompilationRequest(source, output);
-        return new JavaScriptDirectoryCompiler().CompileAsync(configure?.Invoke(request) ?? request);
+        return new JavaScriptDirectoryCompiler().CompileAsync(
+            configure?.Invoke(request) ?? request, TestContext.Current.CancellationToken);
     }
 
     private sealed class TempTree : IDisposable

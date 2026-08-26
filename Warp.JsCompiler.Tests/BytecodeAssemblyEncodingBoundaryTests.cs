@@ -19,7 +19,7 @@ public sealed class BytecodeAssemblyEncodingBoundaryTests
     }
 
     [Theory]
-    [InlineData("undefined", "0628")]
+    [InlineData("undefined", "29")]
     [InlineData("null", "0728")]
     [InlineData("push_false", "0928")]
     [InlineData("push_true", "0A28")]

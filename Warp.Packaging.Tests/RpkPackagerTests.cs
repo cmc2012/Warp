@@ -1,0 +1,121 @@
+using Warp.Diagnostics;
+using Warp.Packaging;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.Json.Nodes;
+using Xunit;
+
+namespace Warp.Packaging.Tests;
+
+public sealed class RpkPackagerTests
+{
+    [Fact]
+    public async Task Packages_build_files_and_emits_a_signed_archive()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
+        var build = Path.Combine(root, "build");
+        var output = Path.Combine(root, "app.rpk");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(build, "common"));
+            await File.WriteAllBytesAsync(Path.Combine(build, "app.jsc"), [0, 1, 2, 3]);
+            await File.WriteAllTextAsync(Path.Combine(build, "common", "asset.txt"), "asset");
+            await File.WriteAllTextAsync(Path.Combine(build, "manifest.json"), "{\"router\":{\"entry\":\"pages/home\"}}");
+
+            var sink = new DiagnosticSink();
+            var result = await new RpkPackager(sink).PackAsync(build, output);
+
+            Assert.False(sink.HasErrors, string.Join(Environment.NewLine, sink.Diagnostics));
+            Assert.Equal(output, result);
+            var package = await File.ReadAllBytesAsync(output);
+            Assert.True(package.Length > 4);
+            Assert.Equal((byte)'P', package[0]);
+            Assert.Equal((byte)'K', package[1]);
+            Assert.True(package.AsSpan().IndexOf("RPK Sig Block 42"u8) >= 0);
+
+            using var archive = new ZipArchive(new MemoryStream(package), ZipArchiveMode.Read);
+            Assert.Contains(archive.Entries, entry => entry.FullName == "META-INF/");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "common/");
+            Assert.Equal("Warp", JsonNode.Parse(await ReadEntryAsync(archive, "manifest.json"))?["packageInfo"]?["toolkit"]?.GetValue<string>());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static async Task<string> ReadEntryAsync(ZipArchive archive, string path)
+    {
+        await using var stream = archive.GetEntry(path)!.Open();
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task Reports_a_missing_build_directory_without_creating_an_archive()
+    {
+        var sink = new DiagnosticSink();
+        var output = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".rpk");
+        var result = await new RpkPackager(sink).PackAsync(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()), output);
+
+        Assert.Equal("", result);
+        Assert.True(sink.HasErrors);
+        Assert.False(File.Exists(output));
+    }
+
+    [Fact]
+    public async Task Uses_project_debug_signing_material_when_present()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
+        var build = Path.Combine(root, "build");
+        var output = Path.Combine(root, "app.rpk");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "sign", "debug"));
+            Directory.CreateDirectory(build);
+            await File.WriteAllBytesAsync(Path.Combine(build, "app.jsc"), [0, 1, 2, 3]);
+            using var key = RSA.Create(2048);
+            var request = new CertificateRequest("CN=warp-test", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
+            await File.WriteAllTextAsync(Path.Combine(root, "sign", "debug", "private.pem"), key.ExportPkcs8PrivateKeyPem());
+            await File.WriteAllTextAsync(Path.Combine(root, "sign", "debug", "certificate.pem"), certificate.ExportCertificatePem());
+
+            var sink = new DiagnosticSink();
+            var result = await new RpkPackager(sink).PackAsync(build, output, new RpkSigningOptions(ProjectDirectory: root));
+
+            Assert.False(sink.HasErrors, string.Join(Environment.NewLine, sink.Diagnostics));
+            Assert.Equal(output, result);
+            var package = await File.ReadAllBytesAsync(output);
+            Assert.True(package.AsSpan().IndexOf(certificate.Export(X509ContentType.Cert)) >= 0);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Rejects_a_build_without_the_required_bytecode_entry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
+        var output = Path.Combine(root, "app.rpk");
+        try
+        {
+            Directory.CreateDirectory(root);
+            await File.WriteAllTextAsync(Path.Combine(root, "app.js"), "exports.default = {};");
+            var sink = new DiagnosticSink();
+
+            var result = await new RpkPackager(sink).PackAsync(root, output);
+
+            Assert.Equal("", result);
+            Assert.True(sink.HasErrors);
+            Assert.False(File.Exists(output));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+}

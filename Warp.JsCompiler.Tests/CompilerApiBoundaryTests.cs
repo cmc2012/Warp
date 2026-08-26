@@ -66,6 +66,13 @@ public sealed class CompilerApiBoundaryTests
     }
 
     [Fact]
+    public void Compiles_loops_with_short_circuit_test()
+    {
+        var bytes = Compile("function read(items) { while (items.length > 0 && items.length < 3) work(items.pop()); for (let index = 0; index < items.length && index < 3; index++) work(items[index]); }", "loop.js").Bytes;
+        Assert.NotEmpty(bytes);
+    }
+
+    [Fact]
     public void File_name_participates_in_unstripped_serialized_bytecode()
     {
         var first = Compile("const value = 1;", "first.js", stripDebugInfo: false).Bytes;

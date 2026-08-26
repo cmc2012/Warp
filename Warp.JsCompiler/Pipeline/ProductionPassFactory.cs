@@ -21,7 +21,6 @@ internal static class ProductionPassFactory
         else
             assembly.Add(new DebugMetadataPass(BytecodeAssemblyAtom.Named(program.FileName)));
         assembly.Add(new BytecodePeepholePass());
-
         return new CompilerPasses(
             ir: [new PseudoBindingPass(), new ConstantControlFlowPass()],
             assembly: assembly);

@@ -1,0 +1,15 @@
+package: com.example.helloworld
+name: Hello World
+versionName: 1.0.0
+versionCode: 1
+icon: /common/icon.svg
+deviceTypeList:
+  - watch
+config:
+  logLevel: log
+  designWidth: device-width
+router:
+  entry: pages/home
+  pages:
+    pages/home:
+      component: home

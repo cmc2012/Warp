@@ -51,6 +51,8 @@ public sealed class RuntimeBoundaryReferenceTests
             yield return Case("object-spread-interleaving", "function make(left, right) { return { before: init(1), ...left, middle: init(2), ...right, after: init(3) }; }");
             yield return Case("object-method-super-home", "const base = { read() { return 1; } }; const child = { __proto__: base, read() { return super.read() + 1; } };");
             yield return Case("object-computed-accessors", "function make(name) { return { get [name]() { return read(); }, set [name](value) { write(value); } }; }");
+            yield return Case("object-method-nested-closure-call", "export default { onShow() { return this.refresh(); }, refresh() { return [1].map(item => item); } };");
+            yield return Case("page-hook-object-methods", "export default { private: { dist: [{ id: 'enemy', ratio: 2 }], currentDist: [] }, refreshDist() { const fight = this.dist.find(item => item.id === 'enemy'); this.currentDist = [0, 1, 2].map(index => Object.assign({}, fight, { id: `fight-${index}` })); }, onInit() { this.updateBagValue(); }, updateBagValue() { return this.currentDist.length; }, onShow() { this.updateBagValue(); this.refreshDist(); } };");
             yield return Case("array-holes-and-spread", "function make(items) { return [first(), , ...items, , last()]; }");
 
             // Scope exits and exceptional pattern initialization need cleanup edges.

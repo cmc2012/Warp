@@ -16,7 +16,7 @@ public sealed class WxamlLanguageService
     ];
 
     private static readonly string[] Attributes = [
-        "x:Class", "Class", "Style", "Text", "Source", "Value", "model", "Const", "Click", "LongPress",
+        "x:Class", "Class", "Style", "Text", "Source", "Value", "Model", "Const", "Click", "LongPress",
         "ItemsSource", "Key", "Test", "Name", "Source", "Selector", "Property", "Query"
     ];
 
@@ -33,7 +33,7 @@ public sealed class WxamlLanguageService
         ["Const"] = "Asserts that this subtree has no runtime bindings, events, control flow, or component instances.",
         ["ItemsSource"] = "The collection used by List.",
         ["ItemTemplate"] = "The single root template used for each List item.",
-        ["model"] = "Two-way binding target. It must be assignable.",
+        ["Model"] = "Two-way binding target. It must be assignable.",
     };
 
     public IReadOnlyList<LspDiagnostic> GetDiagnostics(string uri, string text)
@@ -108,8 +108,8 @@ public sealed class WxamlLanguageService
         {
             return styleReference.Value.Kind switch
             {
-                StyleReferenceKind.Selector when styleReference.Value.Prefix == '.' => $"WXAML style selector `.{styleReference.Value.Name}`. Ctrl/Cmd-click to navigate to its class use.",
-                StyleReferenceKind.Selector when styleReference.Value.Prefix == '#' => $"WXAML style selector `#{styleReference.Value.Name}`. Ctrl/Cmd-click to navigate to its ID use.",
+                StyleReferenceKind.Selector when styleReference.Value.Prefix == '.' => $"WXAML style selector `Class={styleReference.Value.Name}`. Ctrl/Cmd-click to navigate to its class use.",
+                StyleReferenceKind.Selector when styleReference.Value.Prefix == '#' => $"WXAML style selector `Id={styleReference.Value.Name}`. Ctrl/Cmd-click to navigate to its ID use.",
                 StyleReferenceKind.Selector => $"WXAML element selector `{styleReference.Value.Name}`. Ctrl/Cmd-click to navigate to matching elements.",
                 StyleReferenceKind.Class => $"WXAML class `{styleReference.Value.Name}`. Ctrl/Cmd-click to navigate to its style selector.",
                 StyleReferenceKind.Id => $"WXAML ID `{styleReference.Value.Name}`. Ctrl/Cmd-click to navigate to its style selector.",
@@ -178,7 +178,7 @@ public sealed class WxamlLanguageService
         if (attribute is not null)
         {
             var token = SelectorTokenAt(attribute.Value.Text, attribute.Value.Start, offset,
-                attribute.Value.Name.Equals("Selector", StringComparison.OrdinalIgnoreCase));
+                IsStyleTargetAttribute(text, attribute.Value.Start, attribute.Value.Name));
             if (token is not null) return RangeAt(text, token.Value.Start, token.Value.Length);
         }
         var element = ElementAt(text, offset);
@@ -385,11 +385,16 @@ public sealed class WxamlLanguageService
         if (attribute is not null)
         {
             var token = SelectorTokenAt(attribute.Value.Text, attribute.Value.Start, offset,
-                attribute.Value.Name.Equals("Selector", StringComparison.OrdinalIgnoreCase));
+                IsStyleTargetAttribute(text, attribute.Value.Start, attribute.Value.Name));
             if (token is null) return null;
 
-            if (attribute.Value.Name.Equals("Selector", StringComparison.OrdinalIgnoreCase))
-                return new StyleReference(StyleReferenceKind.Selector, token.Value.Prefix, token.Value.Name);
+            if (IsStyleTargetAttribute(text, attribute.Value.Start, attribute.Value.Name))
+            {
+                var prefix = attribute.Value.Name.Equals("Class", StringComparison.OrdinalIgnoreCase) ? '.'
+                    : attribute.Value.Name.Equals("Id", StringComparison.OrdinalIgnoreCase) ? '#'
+                    : '\0';
+                return new StyleReference(StyleReferenceKind.Selector, prefix, token.Value.Name);
+            }
             if (attribute.Value.Name.Equals("Class", StringComparison.OrdinalIgnoreCase))
                 return new StyleReference(StyleReferenceKind.Class, '\0', token.Value.Name);
             if (attribute.Value.Name.Equals("Id", StringComparison.OrdinalIgnoreCase))
@@ -402,12 +407,12 @@ public sealed class WxamlLanguageService
 
     private static (int Start, int Length)? FindStyleTarget(string text, StyleReference reference) => reference.Kind switch
     {
-        StyleReferenceKind.Selector when reference.Prefix == '.' => FindAttributeToken(text, "Class", reference.Name),
-        StyleReferenceKind.Selector when reference.Prefix == '#' => FindAttributeToken(text, "Id", reference.Name),
+        StyleReferenceKind.Selector when reference.Prefix == '.' => FirstTarget(FindComponentAttributeTokens(text, "Class", reference.Name)),
+        StyleReferenceKind.Selector when reference.Prefix == '#' => FirstTarget(FindComponentAttributeTokens(text, "Id", reference.Name)),
         StyleReferenceKind.Selector => FindElementToken(text, reference.Name),
-        StyleReferenceKind.Class => FindSelectorToken(text, '.', reference.Name),
-        StyleReferenceKind.Id => FindSelectorToken(text, '#', reference.Name),
-        StyleReferenceKind.Element => FindSelectorToken(text, '\0', reference.Name),
+        StyleReferenceKind.Class => FindStyleTargetToken(text, "Class", reference.Name),
+        StyleReferenceKind.Id => FindStyleTargetToken(text, "Id", reference.Name),
+        StyleReferenceKind.Element => FindStyleTargetToken(text, "Tag", reference.Name),
         _ => null
     };
 
@@ -424,12 +429,12 @@ public sealed class WxamlLanguageService
     {
         IEnumerable<(int Start, int Length)> targets = reference.Kind switch
         {
-            StyleReferenceKind.Selector when reference.Prefix == '.' => FindAttributeTokens(text, "Class", reference.Name),
-            StyleReferenceKind.Selector when reference.Prefix == '#' => FindAttributeTokens(text, "Id", reference.Name),
+            StyleReferenceKind.Selector when reference.Prefix == '.' => FindComponentAttributeTokens(text, "Class", reference.Name),
+            StyleReferenceKind.Selector when reference.Prefix == '#' => FindComponentAttributeTokens(text, "Id", reference.Name),
             StyleReferenceKind.Selector => FindElementTokens(text, reference.Name),
-            StyleReferenceKind.Class => FindSelectorTokens(text, '.', reference.Name),
-            StyleReferenceKind.Id => FindSelectorTokens(text, '#', reference.Name),
-            StyleReferenceKind.Element => FindSelectorTokens(text, '\0', reference.Name),
+            StyleReferenceKind.Class => FindStyleTargetTokens(text, "Class", reference.Name),
+            StyleReferenceKind.Id => FindStyleTargetTokens(text, "Id", reference.Name),
+            StyleReferenceKind.Element => FindStyleTargetTokens(text, "Tag", reference.Name),
             _ => []
         };
         locations.AddRange(targets.Select(target => new LspLocation(uri, RangeAt(text, target.Start, target.Length))));
@@ -468,7 +473,7 @@ public sealed class WxamlLanguageService
 
     private static (string Name, string Text, int Start)? AttributeValueAt(string text, int offset)
     {
-        foreach (Match match in Regex.Matches(text, "(?<name>Selector|Class|Id)\\s*=\\s*(?<quote>[\\\"'])(?<value>[^\\\"']*)\\k<quote>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        foreach (Match match in Regex.Matches(text, "(?<name>Class|Id|Tag)\\s*=\\s*(?<quote>[\\\"'])(?<value>[^\\\"']*)\\k<quote>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
         {
             var value = match.Groups["value"];
             if (offset >= value.Index && offset <= value.Index + value.Length)
@@ -479,14 +484,11 @@ public sealed class WxamlLanguageService
 
     private static (char Prefix, string Name, int Start, int Length)? SelectorTokenAt(string value, int valueStart, int offset, bool allowPrefix)
     {
-        foreach (Match match in Regex.Matches(value, "(?<prefix>[.#]?)(?<name>[A-Za-z_][A-Za-z0-9_-]*)", RegexOptions.CultureInvariant))
+        foreach (var token in SelectorTokens(value, valueStart))
         {
-            var start = valueStart + match.Index;
-            if (offset < start || offset > start + match.Length) continue;
-            var prefix = match.Groups["prefix"].Value;
-            if (!allowPrefix && prefix.Length != 0) continue;
-            return (prefix.Length == 0 ? '\0' : prefix[0], match.Groups["name"].Value,
-                start + prefix.Length, match.Groups["name"].Length);
+            if (offset < token.Start || offset > token.Start + token.Length) continue;
+            if (!allowPrefix && token.Prefix != '\0') continue;
+            return token;
         }
         return null;
     }
@@ -504,21 +506,74 @@ public sealed class WxamlLanguageService
         }
     }
 
-    private static (int Start, int Length)? FindSelectorToken(string text, char prefix, string name)
-        => FirstTarget(FindSelectorTokens(text, prefix, name));
+    private static (int Start, int Length)? FindStyleTargetToken(string text, string attribute, string name)
+        => FirstTarget(FindStyleTargetTokens(text, attribute, name));
+
+    private static IEnumerable<(int Start, int Length)> FindStyleTargetTokens(string text, string attribute, string name)
+        => FindAttributeTokens(text, attribute, name).Where(token => IsStyleTargetAttribute(text, token.Start, attribute));
+
+    private static IEnumerable<(int Start, int Length)> FindComponentAttributeTokens(string text, string attribute, string name)
+        => FindAttributeTokens(text, attribute, name).Where(token => !IsStyleTargetAttribute(text, token.Start, attribute));
 
     private static IEnumerable<(int Start, int Length)> FindSelectorTokens(string text, char prefix, string name)
     {
         foreach (Match match in Regex.Matches(text, "\\bSelector\\s*=\\s*([\\\"'])(?<value>[^\\\"']*)\\1", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
         {
             var value = match.Groups["value"];
-            foreach (Match token in Regex.Matches(value.Value, "(?<prefix>[.#]?)(?<name>[A-Za-z_][A-Za-z0-9_-]*)", RegexOptions.CultureInvariant))
+            foreach (var token in SelectorTokens(value.Value, value.Index))
+                if (token.Prefix == prefix && token.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                    yield return (token.Start, token.Length);
+        }
+    }
+
+    private static bool IsStyleTargetAttribute(string text, int offset, string attributeName)
+    {
+        if (attributeName is not ("Class" or "Id" or "Tag")) return false;
+        var tagStart = text.LastIndexOf('<', Math.Max(0, offset - 1));
+        if (tagStart < 0 || tagStart + 1 >= text.Length || text[tagStart + 1] == '/') return false;
+        var nameStart = tagStart + 1;
+        while (nameStart < text.Length && char.IsWhiteSpace(text[nameStart])) nameStart++;
+        const string style = "Style";
+        return nameStart + style.Length <= text.Length &&
+               text.AsSpan(nameStart, style.Length).Equals(style, StringComparison.OrdinalIgnoreCase) &&
+               (nameStart + style.Length >= text.Length || char.IsWhiteSpace(text[nameStart + style.Length]) || text[nameStart + style.Length] is '>' or '/');
+    }
+
+    private static IEnumerable<(char Prefix, string Name, int Start, int Length)> SelectorTokens(string value, int valueStart)
+    {
+        var cursor = 0;
+        while (cursor < value.Length)
+        {
+            while (cursor < value.Length && (char.IsWhiteSpace(value[cursor]) || value[cursor] == ',')) cursor++;
+            var partStart = cursor;
+            while (cursor < value.Length && value[cursor] != ',') cursor++;
+            var partEnd = cursor;
+            while (partStart < partEnd && char.IsWhiteSpace(value[partStart])) partStart++;
+            while (partEnd > partStart && char.IsWhiteSpace(value[partEnd - 1])) partEnd--;
+            if (partStart == partEnd) continue;
+
+            var equals = value.IndexOf('=', partStart);
+            char prefix;
+            int nameStart;
+            if (equals < 0 || equals >= partEnd)
             {
-                var tokenPrefix = token.Groups["prefix"].Value;
-                if ((tokenPrefix.Length == 0 ? '\0' : tokenPrefix[0]) == prefix &&
-                    token.Groups["name"].Value.Equals(name, StringComparison.OrdinalIgnoreCase))
-                    yield return (value.Index + token.Index + tokenPrefix.Length, token.Groups["name"].Length);
+                prefix = '\0';
+                nameStart = partStart;
             }
+            else
+            {
+                var kind = value[partStart..equals].Trim();
+                prefix = kind.Equals("Class", StringComparison.OrdinalIgnoreCase) ? '.'
+                    : kind.Equals("Id", StringComparison.OrdinalIgnoreCase) ? '#'
+                    : kind.Equals("Tag", StringComparison.OrdinalIgnoreCase) ? '\0' : '\uffff';
+                if (prefix == '\uffff') continue;
+                nameStart = equals + 1;
+                while (nameStart < partEnd && char.IsWhiteSpace(value[nameStart])) nameStart++;
+            }
+            var nameEnd = nameStart;
+            while (nameEnd < partEnd && (char.IsLetterOrDigit(value[nameEnd]) || value[nameEnd] is '_' or '-')) nameEnd++;
+            if (nameEnd > nameStart)
+                yield return (prefix, value[nameStart..nameEnd], valueStart + nameStart, nameEnd - nameStart);
         }
     }
 

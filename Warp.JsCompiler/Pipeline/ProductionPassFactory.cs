@@ -10,7 +10,9 @@ namespace Warp.JsCompiler.Pipeline;
 /// <summary>Defines the ordered pass pipeline used by production compilation.</summary>
 internal static class ProductionPassFactory
 {
-    internal static CompilerPasses Create(JavaScriptProgram program, bool stripDebugInfo)
+    internal static CompilerPasses Create(JavaScriptProgram program, bool stripDebugInfo, bool minifyLocalBindings,
+        IEnumerable<IIrPass>? externalIrPasses = null,
+        IEnumerable<IBytecodeAssemblyPass>? externalAssemblyPasses = null)
     {
         var assembly = new List<IBytecodeAssemblyPass>();
         if (program.Kind == JavaScriptSourceKind.Module)
@@ -21,8 +23,11 @@ internal static class ProductionPassFactory
         else
             assembly.Add(new DebugMetadataPass(BytecodeAssemblyAtom.Named(program.FileName)));
         assembly.Add(new BytecodePeepholePass());
+        assembly.AddRange(externalAssemblyPasses ?? []);
         return new CompilerPasses(
-            ir: [new PseudoBindingPass(), new ConstantControlFlowPass()],
+            ir: (externalIrPasses ?? []).Concat(minifyLocalBindings
+                ? [new PseudoBindingPass(), new LocalBindingMinificationPass(), new ConstantControlFlowPass()]
+                : [new PseudoBindingPass(), new ConstantControlFlowPass()]),
             assembly: assembly);
     }
 }

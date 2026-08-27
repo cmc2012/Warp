@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Warp.JsCompiler/Warp.JsCompiler.csproj" />
+    <ProjectReference Include="../Warp.JsCompiler.TestPass/Warp.JsCompiler.TestPass.csproj" />
     <PackageReference Include="xunit.v3.mtp-v2" Version="3.2.2" />
     <None Update="Fixtures/**/*.js;Fixtures/**/*.mjs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

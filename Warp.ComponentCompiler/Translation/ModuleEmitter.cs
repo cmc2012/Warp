@@ -21,12 +21,12 @@ public static class ModuleEmitter
         {
             var templateBody = new JsBlockStatement([new JsVariableStatement("const", [new JsVariableDeclarator("_vm_", new JsBinaryExpression("||", Id("vm"), Id("this"), 0, 0), 0, 0)], 0, 0), new JsReturnStatement(new JsArrayExpression(template, 0, 0), 0, 0)], 0, 0);
             body.Add(new JsVariableStatement("var", [new JsVariableDeclarator("$app_template$", new JsFunctionExpression(null, ["vm"], templateBody, false, false, 0, 0), 0, 0)], 0, 0));
-            var entry = new JsBlockStatement([new JsExpressionStatement(Call(Id("$app_script$"), [Object([]), Id("$app_exports$"), Id("$app_require$")]), 0, 0), Assign(Member(Member(Id("$app_exports$"), "default"), "template"), Id("$app_template$")), Assign(Member(Member(Id("$app_exports$"), "default"), "style"), Id("$app_style$"))], 0, 0);
+            var entry = new JsBlockStatement([new JsExpressionStatement(Call(Id("$app_script$"), [Object([]), Id("$app_exports$"), Id("$app_require$1")]), 0, 0), Assign(Member(Member(Id("$app_exports$"), "default"), "template"), Id("$app_template$")), Assign(Member(Member(Id("$app_exports$"), "default"), "style"), Id("$app_style$"))], 0, 0);
             body.Add(Assign(Index(Id("$app_exports$"), String("entry")), new JsFunctionExpression(null, ["$app_exports$"], entry, false, false, 0, 0)));
         }
         else
         {
-            body.Add(new JsExpressionStatement(Call(Id("$app_script$"), [Object([]), Id("$app_exports$"), Id("$app_require$")]), 0, 0));
+            body.Add(new JsExpressionStatement(Call(Id("$app_script$"), [Object([]), Id("$app_exports$"), Id("$app_require$1")]), 0, 0));
             body.Add(Assign(Member(Member(Id("$app_exports$"), "default"), "style"), Id("$app_style$")));
             body.Add(Assign(Member(Member(Id("$app_exports$"), "default"), "manifest"), manifestJson is null ? Call(Id("require"), [String("./manifest.json")]) : JsonExpression(manifestJson)));
             body.AddRange(StyleRuntimeStatements());
@@ -45,7 +45,7 @@ public static class ModuleEmitter
         body.Add(script);
         var templateBody = new JsBlockStatement([new JsVariableStatement("const", [new JsVariableDeclarator("_vm_", new JsBinaryExpression("||", Id("vm"), Id("this"), 0, 0), 0, 0)], 0, 0), new JsReturnStatement(new JsArrayExpression(template, 0, 0), 0, 0)], 0, 0);
         body.Add(new JsVariableStatement("var", [new JsVariableDeclarator("$app_template$", new JsFunctionExpression(null, ["vm"], templateBody, false, false, 0, 0), 0, 0)], 0, 0));
-        body.Add(new JsExpressionStatement(Call(Id("$app_script$"), [Object([]), Id("$app_exports$"), Id("$app_require$")]), 0, 0));
+        body.Add(new JsExpressionStatement(Call(Id("$app_script$"), [Object([]), Id("$app_exports$"), Id("$app_require$1")]), 0, 0));
         body.Add(Assign(Member(Member(Id("$app_exports$"), "default"), "template"), Id("$app_template$")));
         body.Add(Assign(Member(Member(Id("$app_exports$"), "default"), "style"), Id("$app_style$")));
         return JavaScriptAstWriter.Write(new JsAstProgram([WrapRuntimeModule(body, isPage: true)]));
@@ -118,7 +118,10 @@ public static class ModuleEmitter
             new JsVariableStatement("var", [new JsVariableDeclarator("setInterval", Member(Id("global"), "setInterval"), 0, 0)], 0, 0),
             new JsVariableStatement("var", [new JsVariableDeclarator("clearTimeout", Member(Id("global"), "clearTimeout"), 0, 0)], 0, 0),
             new JsVariableStatement("var", [new JsVariableDeclarator("clearInterval", Member(Id("global"), "clearInterval"), 0, 0)], 0, 0),
-            new JsVariableStatement("var", [new JsVariableDeclarator("$app_require$", new JsBinaryExpression("||", Member(Id("global"), "$app_require$"), Id("org_app_require"), 0, 0), 0, 0)], 0, 0),
+            // Rspack renames the wrapper-local require to $app_require$1 because
+            // the generated script module has a $app_require$ parameter.  Preserve
+            // that exact lexical layout: the Vela HMR evaluator reuses this scope.
+            new JsVariableStatement("var", [new JsVariableDeclarator("$app_require$1", new JsBinaryExpression("||", Member(Id("global"), "$app_require$"), Id("org_app_require"), 0, 0), 0, 0)], 0, 0),
             new JsVariableStatement("var", [new JsVariableDeclarator(handlerName, handler, 0, 0)], 0, 0),
             new JsReturnStatement(Call(Id(handlerName), []), 0, 0)
         };

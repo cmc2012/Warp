@@ -4,7 +4,7 @@ using Warp.JsCompiler.Ir.Passes;
 namespace Warp.JsCompiler.Assembly.Passes;
 
 /// <summary>A pass that transforms resolved ECMAScript assembly without observing frontend IR.</summary>
-internal interface IBytecodeAssemblyPass
+public interface IBytecodeAssemblyPass
 {
     BytecodeAssemblyProgram Run(BytecodeAssemblyProgram program);
 }

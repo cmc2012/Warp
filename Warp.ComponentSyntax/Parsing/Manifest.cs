@@ -20,7 +20,10 @@ public sealed record Manifest(
 public sealed record ManifestFeature([property: JsonPropertyName("name")] string FeatureName);
 public sealed record ManifestConfig(
     [property: JsonPropertyName("logLevel")] string LogLevel,
-    [property: JsonPropertyName("designWidth")] string DesignWidth);
+    [property: JsonPropertyName("designWidth")] string DesignWidth,
+    // This affects compiler passes only and is deliberately not part of the
+    // device runtime manifest.
+    [property: JsonIgnore] bool MinifyIdentifiers = true);
 public sealed record ManifestRouter(
     [property: JsonPropertyName("entry")] string Entry,
     [property: JsonPropertyName("pages")] IReadOnlyDictionary<string, ManifestPage> Pages);

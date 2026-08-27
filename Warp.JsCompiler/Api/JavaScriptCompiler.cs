@@ -1,4 +1,6 @@
 using Warp.JsCompiler.Frontend;
+using Warp.JsCompiler.Ir;
+using Warp.JsCompiler.Ir.Passes;
 using Warp.JsCompiler.Pipeline;
 
 namespace Warp.JsCompiler.Api;
@@ -9,6 +11,15 @@ namespace Warp.JsCompiler.Api;
 /// </summary>
 public sealed class JavaScriptCompiler
 {
+    private readonly ExternalPasses _externalPasses;
+    private readonly Action<JavaScriptCompilerWarning>? _warningSink;
+
+    public JavaScriptCompiler(JavaScriptCompilerOptions? options = null)
+    {
+        _externalPasses = ExternalJavaScriptPassLoader.Load(options?.ExternalPassAssemblyPaths ?? []);
+        _warningSink = options?.WarningSink;
+    }
+
     public JavaScriptBytecode Compile(JavaScriptCompilationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -25,7 +36,8 @@ public sealed class JavaScriptCompiler
                 request.FileName, import.Line, import.Column, "ECMA2001");
         }
 
-        return new JavaScriptBytecode(JavaScriptCompilerPipeline.Compile(program, request.StripDebugInfo), request.FileName, kind);
+        return new JavaScriptBytecode(JavaScriptCompilerPipeline.Compile(
+            program, request.StripDebugInfo, request.MinifyLocalBindings, _externalPasses.Ir, _externalPasses.Assembly), request.FileName, kind);
     }
 
     public JavaScriptModuleGraph CompileModuleGraph(JavaScriptCompilationRequest entry, IJavaScriptModuleResolver resolver)
@@ -34,18 +46,30 @@ public sealed class JavaScriptCompiler
         ArgumentNullException.ThrowIfNull(resolver);
         entry.Validate();
 
-        var modules = new Dictionary<string, JavaScriptBytecode>(StringComparer.Ordinal);
+        var modules = new Dictionary<string, LoadedModule>(StringComparer.Ordinal);
         var visiting = new HashSet<string>(StringComparer.Ordinal);
         // Static specifiers identify requests in the driver-facing module
         // graph.  Cache the resolved source before walking it so a diamond
         // dependency does not call an otherwise stateful resolver twice.
         var resolvedModules = new Dictionary<string, JavaScriptModuleSource>(StringComparer.Ordinal);
-        CompileModule(entry, resolver, modules, visiting, resolvedModules);
-        return new JavaScriptModuleGraph(modules);
+        LoadModule(entry, resolver, modules, visiting, resolvedModules);
+        var warnings = CollectModuleGraphWarnings(modules);
+        var ir = modules.ToDictionary(pair => pair.Key, pair => new ProgramIrLowerer().Run(pair.Value.Program), StringComparer.Ordinal);
+        var dependencies = modules.ToDictionary(pair => pair.Key,
+            pair => (IReadOnlyDictionary<int, string>)ir[pair.Key].RequiredModules.Select((specifier, index) => (specifier, index))
+                .Where(item => pair.Value.Dependencies.TryGetValue(item.specifier, out _))
+                .ToDictionary(item => item.index, item => pair.Value.Dependencies[item.specifier]), StringComparer.Ordinal);
+        var graph = new IrModuleGraph(ir, entry.FileName, dependencies);
+        if (entry.MinifyLocalBindings) new ModuleGraphBindingMinificationPass().Run(graph);
+        foreach (var pass in _externalPasses.ModuleGraph) pass.Run(graph);
+        var bytecode = modules.ToDictionary(pair => pair.Key, pair => new JavaScriptBytecode(JavaScriptCompilerPipeline.CompileIr(
+            pair.Value.Program, graph.Modules[pair.Key], pair.Value.Request.StripDebugInfo, pair.Value.Request.MinifyLocalBindings,
+            _externalPasses.Ir, _externalPasses.Assembly), pair.Key, pair.Value.Kind), StringComparer.Ordinal);
+        return new JavaScriptModuleGraph(bytecode, warnings);
     }
 
-    private static void CompileModule(JavaScriptCompilationRequest request, IJavaScriptModuleResolver resolver,
-        Dictionary<string, JavaScriptBytecode> modules, HashSet<string> visiting,
+    private void LoadModule(JavaScriptCompilationRequest request, IJavaScriptModuleResolver resolver,
+        Dictionary<string, LoadedModule> modules, HashSet<string> visiting,
         Dictionary<string, JavaScriptModuleSource> resolvedModules)
     {
         if (modules.ContainsKey(request.FileName)) return;
@@ -53,6 +77,7 @@ public sealed class JavaScriptCompiler
 
         var kind = DetectKind(request);
         var program = new JavaScriptFrontEnd(request.Source, request.FileName, kind).Parse();
+        var dependencies = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var import in program.StaticImports)
         {
             if (!resolvedModules.TryGetValue(import.Specifier, out var dependency))
@@ -69,15 +94,50 @@ public sealed class JavaScriptCompiler
                         import.Line, import.Column, "ECMA2003");
                 resolvedModules.Add(import.Specifier, dependency);
             }
+            if (!dependency.IsExternal) dependencies[import.Specifier] = dependency.CanonicalName;
             if (dependency.IsExternal) continue;
-            CompileModule(new JavaScriptCompilationRequest(dependency.Source, dependency.CanonicalName, JavaScriptSourceKind.Module)
+            LoadModule(new JavaScriptCompilationRequest(dependency.Source, dependency.CanonicalName, JavaScriptSourceKind.Module)
             {
                 StripDebugInfo = request.StripDebugInfo,
+                MinifyLocalBindings = request.MinifyLocalBindings,
             }, resolver, modules, visiting, resolvedModules);
         }
 
-        modules.Add(request.FileName, new JavaScriptBytecode(JavaScriptCompilerPipeline.Compile(program, request.StripDebugInfo), request.FileName, kind));
+        modules.Add(request.FileName, new LoadedModule(request, program, kind, dependencies));
         visiting.Remove(request.FileName);
+    }
+
+    private sealed record LoadedModule(JavaScriptCompilationRequest Request, JavaScriptProgram Program, JavaScriptSourceKind Kind,
+        IReadOnlyDictionary<string, string> Dependencies);
+
+    private List<JavaScriptCompilerWarning> CollectModuleGraphWarnings(IReadOnlyDictionary<string, LoadedModule> modules)
+    {
+        var warnings = new List<JavaScriptCompilerWarning>();
+        foreach (var module in modules.Values)
+        foreach (var statement in module.Program.Ast.Body)
+        {
+            switch (statement)
+            {
+                case JsExportAllStatement exportAll:
+                    ReportWarning(warnings, new JavaScriptCompilerWarning(
+                        "Avoid 'export *': it can force exported property names to remain stable across a public module boundary. Prefer explicit named re-exports.",
+                        module.Request.FileName, exportAll.Line, exportAll.Column, "WARP3001"));
+                    break;
+                case JsImportStatement import:
+                    foreach (var binding in import.Bindings.Where(binding => binding.Kind == JsImportBindingKind.Namespace))
+                        ReportWarning(warnings, new JavaScriptCompilerWarning(
+                            "Avoid namespace imports ('import * as ...'): dynamically accessed properties require exported names to remain stable. Prefer explicit named imports.",
+                            module.Request.FileName, binding.Line, binding.Column, "WARP3002"));
+                    break;
+            }
+        }
+        return warnings;
+    }
+
+    private void ReportWarning(List<JavaScriptCompilerWarning> warnings, JavaScriptCompilerWarning warning)
+    {
+        warnings.Add(warning);
+        _warningSink?.Invoke(warning);
     }
 
     private static JavaScriptSourceKind DetectKind(JavaScriptCompilationRequest request)

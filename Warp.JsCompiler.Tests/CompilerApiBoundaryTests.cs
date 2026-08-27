@@ -217,6 +217,51 @@ public sealed class CompilerApiBoundaryTests
         Assert.Equal(standalone.Modules["dependency.js"].Bytes, graph.Modules["dependency.js"].Bytes);
     }
 
+    [Fact]
+    public void Module_graph_minifies_internal_exports_but_keeps_entry_exports_stable()
+    {
+        var resolver = new MapResolver(("dependency", new("dependency.js", "export const value = 2;")));
+        var compiler = new JavaScriptCompiler();
+        var baseline = compiler.CompileModuleGraph(new("import { value } from 'dependency'; export const result = value;", "entry.js", JavaScriptSourceKind.Module), resolver);
+        var minified = compiler.CompileModuleGraph(new("import { value } from 'dependency'; export const result = value;", "entry.js", JavaScriptSourceKind.Module)
+        {
+            MinifyLocalBindings = true,
+        }, new MapResolver(("dependency", new("dependency.js", "export const value = 2;"))));
+
+        Assert.NotEqual(baseline.Modules["dependency.js"].Bytes, minified.Modules["dependency.js"].Bytes);
+        Assert.NotEmpty(minified.Modules["entry.js"].Bytes);
+        Assert.NotEmpty(minified.Modules["dependency.js"].Bytes);
+    }
+
+    [Fact]
+    public void Module_graph_minifies_through_internal_export_star_chain()
+    {
+        static MapResolver Resolver() => new(
+            ("relay", new("relay.js", "export * from 'leaf';")),
+            ("leaf", new("leaf.js", "export const value = 2;")));
+        const string entry = "import { value } from 'relay'; export const result = value;";
+        var compiler = new JavaScriptCompiler();
+        var baseline = compiler.CompileModuleGraph(new(entry, "entry.js", JavaScriptSourceKind.Module), Resolver());
+        var minified = compiler.CompileModuleGraph(new(entry, "entry.js", JavaScriptSourceKind.Module) { MinifyLocalBindings = true }, Resolver());
+
+        Assert.NotEqual(baseline.Modules["leaf.js"].Bytes, minified.Modules["leaf.js"].Bytes);
+        Assert.NotEmpty(minified.Modules["relay.js"].Bytes);
+    }
+
+    [Fact]
+    public void Module_graph_warns_when_export_star_or_namespace_import_blocks_export_name_minification()
+    {
+        var warningsFromSink = new List<JavaScriptCompilerWarning>();
+        var compiler = new JavaScriptCompiler(new JavaScriptCompilerOptions { WarningSink = warningsFromSink.Add });
+        var graph = compiler.CompileModuleGraph(new("import * as api from 'relay'; export { api };", "entry.js", JavaScriptSourceKind.Module),
+            new MapResolver(("relay", new("relay.js", "export * from 'leaf';")), ("leaf", new("leaf.js", "export const value = 2;"))));
+
+        Assert.Equal(["WARP3001", "WARP3002"], graph.Warnings.Select(warning => warning.Code).OrderBy(code => code));
+        Assert.Equal(graph.Warnings, warningsFromSink);
+        Assert.Contains(graph.Warnings, warning => warning.Message.Contains("explicit named imports"));
+        Assert.Contains(graph.Warnings, warning => warning.Message.Contains("explicit named re-exports"));
+    }
+
     [Theory]
     [InlineData(0, 0)]
     [InlineData(1, 1)]

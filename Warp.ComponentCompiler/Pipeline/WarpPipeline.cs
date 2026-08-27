@@ -22,6 +22,7 @@ public sealed class WarpPipeline
     private readonly DiagnosticSink _sink;
     private readonly ILogger _logger;
     private readonly HashSet<string> _builtComponents = new(StringComparer.OrdinalIgnoreCase);
+    private bool _minifyIdentifiers = true;
 
     public WarpPipeline(BuildOptions opts, ILogger? logger = null)
     {
@@ -34,12 +35,16 @@ public sealed class WarpPipeline
 
     public async Task<BuildResult> BuildAsync(CancellationToken ct = default)
     {
+        if (!PrepareOutputDirectory())
+            return new BuildResult([], _sink.Diagnostics, false);
+
         var manifestPath = ManifestPath(_opts.ProjectPath);
         Manifest? manifest = null;
         if (File.Exists(manifestPath))
         {
             var text = await File.ReadAllTextAsync(manifestPath, ct);
             manifest = new ManifestParser().Parse(text, manifestPath, _sink);
+            _minifyIdentifiers = manifest.Config.MinifyIdentifiers;
         }
         else
         {
@@ -68,7 +73,7 @@ public sealed class WarpPipeline
         }
         CopyResources();
         CopyRuntimeConfiguration();
-        if (!_sink.HasErrors)
+        if (!_sink.HasErrors && _opts.CompileJavaScript)
         {
             var bytecodeSucceeded = await CompileBytecodeAsync(ct);
             if (bytecodeSucceeded)
@@ -76,7 +81,30 @@ public sealed class WarpPipeline
         }
 
         var success = !_sink.HasErrors;
-        return new BuildResult(pageResults, _sink.Diagnostics, success);
+        return new BuildResult(pageResults, _sink.Diagnostics, success, BytecodeCompiled: _opts.CompileJavaScript && success);
+    }
+
+    /// <summary>
+    /// The bytecode compiler compiles every JavaScript file below the output root.
+    /// Recreate that generated-only directory so deleted pages, components, and
+    /// previous JavaScript output cannot leave unreachable .jsc artifacts behind.
+    /// </summary>
+    private bool PrepareOutputDirectory()
+    {
+        var projectRoot = Path.GetFullPath(_opts.ProjectPath);
+        var sourceRoot = Path.GetFullPath(Path.Combine(projectRoot, _opts.SourceRoot));
+        var outputRoot = Path.GetFullPath(Path.Combine(projectRoot, _opts.OutputDir));
+        var relative = Path.GetRelativePath(projectRoot, outputRoot);
+        if (relative == "." || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+            outputRoot.Equals(sourceRoot, StringComparison.OrdinalIgnoreCase) || sourceRoot.StartsWith(outputRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            _sink.Error($"refusing to clean unsafe output directory '{outputRoot}'");
+            return false;
+        }
+
+        if (Directory.Exists(outputRoot)) Directory.Delete(outputRoot, recursive: true);
+        Directory.CreateDirectory(outputRoot);
+        return true;
     }
 
     private IReadOnlyList<string> DiscoverPages(Manifest? manifest)
@@ -105,20 +133,32 @@ public sealed class WarpPipeline
         var wxamlDoc = new WxamlParser().Parse(wxamlText, wxamlPath, sink);
         var logic = new ComponentScriptParser().Parse(jsText, jsPath, sink);
         var inlineComponents = await ResolveInlineComponentsAsync(wxamlDoc, wxamlPath, sink, ct);
+        var inlineMerge = InlineComponentScriptMerger.Merge(logic, inlineComponents, wxamlDoc);
+        logic = inlineMerge.Logic;
+        inlineComponents = inlineMerge.Components;
+        var nameMinification = MinifyComponentMethodNames(logic, inlineComponents);
+        logic = nameMinification.Logic;
+        inlineComponents = nameMinification.Components;
+        var inlineInvocationPlans = RewriteInlineInvocationPlans(inlineMerge.InvocationPlans, nameMinification.Names);
 
         var constTable = ConstantTable.Build(logic, sink);
 
         var budget = StaticAnalysis.Analyze(wxamlDoc, constTable, sink);
 
         var transparentConsts = constTable.Entries.Values.ToList();
+        var mergedStyles = MergeInlineStyles(wxamlDoc.Styles, inlineComponents.Values);
+        var styleSelectorTransform = StyleSelectorTransform.Create(mergedStyles, wxamlDoc.Imports.Concat(FlattenInlineComponents(inlineComponents.Values).SelectMany(component => component.Document.Imports)));
         var templateCode = new TemplateTranslator(
             constTable,
             logic.Functions.Select(function => function.Name),
             wxamlPath,
             Path.Combine(_opts.ProjectPath, _opts.SourceRoot),
             sink,
-            inlineComponents: inlineComponents).TranslateAst(wxamlDoc.Children);
-        var styleCode = StyleTranslator.Translate(MergeInlineStyles(wxamlDoc.Styles, inlineComponents.Values));
+            inlineComponents: inlineComponents,
+            styleSelectorTransform: styleSelectorTransform,
+            methodNames: nameMinification.Names,
+            inlineInvocationPlans: inlineInvocationPlans).TranslateAst(wxamlDoc.Children, generatedClasses: GeneratedClasses(styleSelectorTransform, "page"));
+        var styleCode = StyleTranslator.Translate(mergedStyles, styleSelectorTransform);
         var bundler = new RelativeModuleBundler(Path.Combine(_opts.ProjectPath, _opts.SourceRoot), sink);
         var bundledModules = bundler.Bundle(logic, jsPath);
         var scriptCode = ScriptTranslator.Translate(logic, isPage: true,
@@ -134,7 +174,7 @@ public sealed class WarpPipeline
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         await File.WriteAllTextAsync(outPath, moduleCode, ct);
 
-        CrossCheck(wxamlDoc, logic, sink);
+        CrossCheck(wxamlDoc, logic, sink, nameMinification.Names);
 
         _sink.Merge(sink.Diagnostics);
         return new PageBuildResult(pageName, outPath, budget, sink.Diagnostics);
@@ -145,48 +185,77 @@ public sealed class WarpPipeline
         var result = new Dictionary<string, InlineComponentDefinition>(StringComparer.OrdinalIgnoreCase);
         foreach (var import in host.Imports.Where(import => import.IsInline))
         {
-            var componentPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(hostPath)!, import.Src));
-            if (!File.Exists(componentPath))
-            {
-                sink.Error($"missing inline component {componentPath}", import.Position);
-                continue;
-            }
-            var component = new WxamlParser().Parse(await File.ReadAllTextAsync(componentPath, ct), componentPath, sink);
-            if (component.Component is null)
-            {
-                sink.Error($"inline import '{import.Name}' must reference a <Component>", import.Position);
-                continue;
-            }
-            if (component.Imports.Count > 0)
-            {
-                sink.Error($"inline component '{import.Name}' cannot import other components", import.Position);
-                continue;
-            }
-            var scriptPath = Path.ChangeExtension(componentPath, ".js");
-            var componentLogic = new ComponentScriptParser().Parse(File.Exists(scriptPath) ? await File.ReadAllTextAsync(scriptPath, ct) : "export default { data: {} }", scriptPath, sink);
-            if (!IsInlineSafe(componentLogic))
-            {
-                sink.Error($"inline component '{import.Name}' must be stateless and may only declare props with an empty data object", import.Position);
-                continue;
-            }
-            result[import.Name] = new InlineComponentDefinition(component, componentPath);
+            var component = await ResolveInlineComponentAsync(import, hostPath, sink, ct, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            if (component is not null) result[import.Name] = component;
         }
         return result;
+    }
+
+    private async Task<InlineComponentDefinition?> ResolveInlineComponentAsync(UxImportRef import, string hostPath, DiagnosticSink sink, CancellationToken ct, ISet<string> ancestry)
+    {
+        var componentPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(hostPath)!, import.Src));
+        if (!ancestry.Add(componentPath))
+        {
+            sink.Error($"inline component import cycle detected at '{import.Name}'", import.Position);
+            return null;
+        }
+        if (!File.Exists(componentPath))
+        {
+            sink.Error($"missing inline component {componentPath}", import.Position);
+            return null;
+        }
+        var component = new WxamlParser().Parse(await File.ReadAllTextAsync(componentPath, ct), componentPath, sink);
+        if (component.Component is null)
+        {
+            sink.Error($"inline import '{import.Name}' must reference a <Component>", import.Position);
+            return null;
+        }
+        if (component.Imports.Any(nested => !nested.IsInline))
+        {
+            sink.Error($"inline component '{import.Name}' may only import inline components", import.Position);
+            return null;
+        }
+        var scriptPath = Path.ChangeExtension(componentPath, ".js");
+        var componentLogic = new ComponentScriptParser().Parse(File.Exists(scriptPath) ? await File.ReadAllTextAsync(scriptPath, ct) : "export default { data: {} }", scriptPath, sink);
+        if (!IsInlineSafe(componentLogic))
+        {
+            sink.Error($"inline component '{import.Name}' may only declare props, an empty data object, lifecycle hooks, and methods", import.Position);
+            return null;
+        }
+        var nested = new Dictionary<string, InlineComponentDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var nestedImport in component.Imports)
+        {
+            var nestedComponent = await ResolveInlineComponentAsync(nestedImport, componentPath, sink, ct, new HashSet<string>(ancestry, StringComparer.OrdinalIgnoreCase));
+            if (nestedComponent is not null) nested[nestedImport.Name] = nestedComponent;
+        }
+        return new InlineComponentDefinition(component, componentPath, componentLogic, nested);
     }
 
     private static bool IsInlineSafe(ComponentLogic logic)
     {
         if (logic.Imports.Count > 0 || logic.Consts.Count > 0 || logic.Functions.Count > 0 || logic.NamedExports.Count > 0) return false;
-        return logic.ExportDefault?.Properties.All(property => property.Kind == JsPropertyKind.Props ||
+        return logic.ExportDefault?.Properties.All(property => property.Kind is JsPropertyKind.Props or JsPropertyKind.Method or JsPropertyKind.Lifecycle ||
             (property.Kind == JsPropertyKind.Data && property.RawValue == "{}")) ?? true;
     }
 
     private static UxStyleSheet? MergeInlineStyles(UxStyleSheet? host, IEnumerable<InlineComponentDefinition> components)
     {
-        var sheets = components.Select(component => component.Document.Styles).Append(host).Where(sheet => sheet is not null).Cast<UxStyleSheet>().ToArray();
+        var sheets = FlattenInlineComponents(components).Select(component => component.Document.Styles).Append(host).Where(sheet => sheet is not null).Cast<UxStyleSheet>().ToArray();
         if (sheets.Length == 0) return null;
         return new UxStyleSheet(sheets.SelectMany(sheet => sheet.Rules).ToArray(), sheets.SelectMany(sheet => sheet.MediaRules ?? []).ToArray());
     }
+
+    private static IEnumerable<InlineComponentDefinition> FlattenInlineComponents(IEnumerable<InlineComponentDefinition> components)
+    {
+        foreach (var component in components)
+        {
+            yield return component;
+            foreach (var nested in FlattenInlineComponents(component.InlineComponents.Values)) yield return nested;
+        }
+    }
+
+    private static IReadOnlyList<string> GeneratedClasses(StyleSelectorTransform transform, string tag)
+        => transform.GeneratedClassFor(tag) is { } generatedClass ? [generatedClass] : [];
 
     private async Task BuildComponentAsync(UxImportRef import, string importerPath, CancellationToken ct)
     {
@@ -196,18 +265,28 @@ public sealed class WarpPipeline
         if (!File.Exists(wxamlPath)) { sink.Error($"missing component {wxamlPath}", import.Position); _sink.Merge(sink.Diagnostics); return; }
         var doc = new WxamlParser().Parse(await File.ReadAllTextAsync(wxamlPath, ct), wxamlPath, sink);
         if (doc.Component is null) sink.Error($"import '{import.Name}' must reference a <Component>", import.Position);
-        foreach (var nested in doc.Imports) await BuildComponentAsync(nested, wxamlPath, ct);
+        foreach (var nested in doc.Imports.Where(nested => !nested.IsInline)) await BuildComponentAsync(nested, wxamlPath, ct);
         var jsPath = Path.ChangeExtension(wxamlPath, ".js");
         var logic = new ComponentScriptParser().Parse(File.Exists(jsPath) ? await File.ReadAllTextAsync(jsPath, ct) : "export default { data: {} }", jsPath, sink);
+        var inlineComponents = await ResolveInlineComponentsAsync(doc, wxamlPath, sink, ct);
+        var inlineMerge = InlineComponentScriptMerger.Merge(logic, inlineComponents, doc);
+        logic = inlineMerge.Logic;
+        inlineComponents = inlineMerge.Components;
+        var nameMinification = MinifyComponentMethodNames(logic, inlineComponents);
+        logic = nameMinification.Logic;
+        inlineComponents = nameMinification.Components;
+        var inlineInvocationPlans = RewriteInlineInvocationPlans(inlineMerge.InvocationPlans, nameMinification.Names);
         var constants = ConstantTable.Build(logic, sink);
-        var template = new TemplateTranslator(constants, logic.Functions.Select(function => function.Name), wxamlPath, Path.Combine(_opts.ProjectPath, _opts.SourceRoot), sink).TranslateAst(doc.Children);
+        var mergedStyles = MergeInlineStyles(doc.Styles, inlineComponents.Values);
+        var styleSelectorTransform = StyleSelectorTransform.Create(mergedStyles, doc.Imports.Concat(FlattenInlineComponents(inlineComponents.Values).SelectMany(component => component.Document.Imports)));
+        var template = new TemplateTranslator(constants, logic.Functions.Select(function => function.Name), wxamlPath, Path.Combine(_opts.ProjectPath, _opts.SourceRoot), sink, inlineComponents: inlineComponents, styleSelectorTransform: styleSelectorTransform, methodNames: nameMinification.Names, inlineInvocationPlans: inlineInvocationPlans).TranslateAst(doc.Children, generatedClasses: GeneratedClasses(styleSelectorTransform, "component"));
         var bundler = new RelativeModuleBundler(Path.Combine(_opts.ProjectPath, _opts.SourceRoot), sink);
-        var output = Translation.ModuleEmitter.EmitComponent(doc, StyleTranslator.Translate(doc.Styles), ScriptTranslator.Translate(logic, isPage: false, item => item.IsRelative ? bundler.IdForImport(jsPath, item.Specifier) : null), template, constants.Entries.Values.ToList(), bundler.Bundle(logic, jsPath));
+        var output = Translation.ModuleEmitter.EmitComponent(doc, StyleTranslator.Translate(mergedStyles, styleSelectorTransform), ScriptTranslator.Translate(logic, isPage: false, item => item.IsRelative ? bundler.IdForImport(jsPath, item.Specifier) : null), template, constants.Entries.Values.ToList(), bundler.Bundle(logic, jsPath));
         var relative = Path.ChangeExtension(Path.GetRelativePath(Path.Combine(_opts.ProjectPath, _opts.SourceRoot), wxamlPath), ".js");
         var outPath = Path.Combine(_opts.ProjectPath, _opts.OutputDir, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
         await File.WriteAllTextAsync(outPath, output, ct);
-        CrossCheck(doc, logic, sink);
+        CrossCheck(doc, logic, sink, nameMinification.Names);
         _sink.Merge(sink.Diagnostics);
     }
 
@@ -227,7 +306,7 @@ public sealed class WarpPipeline
         {
             var wxamlText = await File.ReadAllTextAsync(appWxamlPath, ct);
             var doc = new WxamlParser().Parse(wxamlText, appWxamlPath, sink);
-            styleCode = StyleTranslator.Translate(doc.Styles);
+            styleCode = StyleTranslator.Translate(doc.Styles, StyleSelectorTransform.Create(doc.Styles, doc.Imports));
         }
 
         var bundler = new RelativeModuleBundler(Path.Combine(_opts.ProjectPath, _opts.SourceRoot), sink);
@@ -295,7 +374,8 @@ public sealed class WarpPipeline
                 {
                     // Match the target compiler's `-m -s` invocation: every
                     // generated file is emitted as stripped module bytecode.
-                    CompileAsModules = true
+                    CompileAsModules = true,
+                    MinifyLocalBindings = _minifyIdentifiers
                 }, ct);
             if (!_opts.KeepJavaScript)
             {
@@ -320,11 +400,34 @@ public sealed class WarpPipeline
         }
     }
 
-    private static void CrossCheck(UxDocument doc, ComponentLogic logic, DiagnosticSink sink)
+    private (ComponentLogic Logic, IReadOnlyDictionary<string, string> Names,
+        IReadOnlyDictionary<string, InlineComponentDefinition> Components) MinifyComponentMethodNames(
+            ComponentLogic logic, IReadOnlyDictionary<string, InlineComponentDefinition> inlineComponents)
+    {
+        if (!_minifyIdentifiers)
+            return (logic, new Dictionary<string, string>(StringComparer.Ordinal), inlineComponents);
+
+        return ComponentMethodNameMinifier.Minify(logic, inlineComponents);
+    }
+
+    private static IReadOnlyDictionary<SourcePosition, InlineInvocationPlan> RewriteInlineInvocationPlans(
+        IReadOnlyDictionary<SourcePosition, InlineInvocationPlan> plans, IReadOnlyDictionary<string, string> names)
+        => plans.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value with
+            {
+                MethodNames = pair.Value.MethodNames.ToDictionary(
+                    method => method.Key,
+                    method => names.TryGetValue(method.Value, out var renamed) ? renamed : method.Value,
+                    StringComparer.Ordinal)
+            });
+
+    private static void CrossCheck(UxDocument doc, ComponentLogic logic, DiagnosticSink sink, IReadOnlyDictionary<string, string>? originalMethodNames = null)
     {
         var methods = new HashSet<string>(
             logic.ExportDefault?.Properties.Where(p => p.Kind is JsPropertyKind.Method or JsPropertyKind.Lifecycle).Select(p => p.Name) ?? [],
             StringComparer.Ordinal);
+        if (originalMethodNames is not null) methods.UnionWith(originalMethodNames.Keys);
         var dataKeys = new HashSet<string>(StringComparer.Ordinal);
         var propNames = new HashSet<string>(StringComparer.Ordinal);
         var props = logic.ExportDefault?.Properties.FirstOrDefault(p => p.Kind == JsPropertyKind.Props);

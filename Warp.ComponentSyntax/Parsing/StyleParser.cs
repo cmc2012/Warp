@@ -46,6 +46,51 @@ public sealed class StyleParser
         return list;
     }
 
+    /// <summary>
+    /// Parses WXAML's explicit selector syntax.  `Class=card` and `Id=title`
+    /// make the target unambiguous; a bare component name such as `Div`
+    /// applies to every instance of that component.
+    /// </summary>
+    public IReadOnlyList<StyleSelector> ParseWxamlSelectors(string selectorText, string filePath, DiagnosticSink sink)
+    {
+        var selectors = new List<StyleSelector>();
+        foreach (var part in selectorText.Split(','))
+        {
+            var selector = part.Trim();
+            if (selector.Length == 0) continue;
+
+            var equals = selector.IndexOf('=');
+            if (equals < 0)
+            {
+                if (IsSelectorName(selector)) selectors.Add(new StyleSelector(StyleSelectorKind.Tag, selector));
+                else sink.Error($"invalid WXAML selector '{selector}' (use Class=name, Id=name, Tag=name, or a component name)", new SourcePosition(filePath, 1, 1));
+                continue;
+            }
+
+            var kind = selector[..equals].Trim();
+            var name = selector[(equals + 1)..].Trim();
+            if (!IsSelectorName(name))
+            {
+                sink.Error($"invalid selector target '{name}'", new SourcePosition(filePath, 1, 1));
+                continue;
+            }
+
+            if (kind.Equals("Class", StringComparison.OrdinalIgnoreCase)) selectors.Add(new StyleSelector(StyleSelectorKind.Class, name));
+            else if (kind.Equals("Id", StringComparison.OrdinalIgnoreCase)) selectors.Add(new StyleSelector(StyleSelectorKind.Id, name));
+            else if (kind.Equals("Tag", StringComparison.OrdinalIgnoreCase)) selectors.Add(new StyleSelector(StyleSelectorKind.Tag, name));
+            else sink.Error($"unsupported selector kind '{kind}' (use Class, Id, or Tag)", new SourcePosition(filePath, 1, 1));
+        }
+        return selectors;
+    }
+
+    private static bool IsSelectorName(string value)
+    {
+        if (value.Length == 0 || !char.IsLetter(value[0])) return false;
+        for (var index = 1; index < value.Length; index++)
+            if (!char.IsLetterOrDigit(value[index]) && value[index] is not '_' and not '-') return false;
+        return true;
+    }
+
     public IReadOnlyList<StyleDeclaration> ParseDeclarations(IEnumerable<KeyValuePair<string, string>> declarations, string filePath, DiagnosticSink sink)
     {
         var list = new List<StyleDeclaration>();

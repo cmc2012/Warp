@@ -1,3 +1,5 @@
+#nullable disable warnings
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -419,10 +421,6 @@ internal sealed class AstToIrLowerer
 				break;
 			}
 			IrFunctionId parentId = parentFunction.GetValueOrDefault();
-			if (1 == 0)
-			{
-				break;
-			}
 			ecmaIrFunction = _module.Functions.Single((IrFunction item) => item.Id == parentId);
 		}
 		return null;

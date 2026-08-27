@@ -324,10 +324,18 @@ public sealed class WxamlParser
 
     private static IReadOnlyList<UxStyleRule> ParseXamlStyle(IElement element, StyleParser styleParser, string filePath, DiagnosticSink sink)
     {
-        var selectorText = GetAttr(element, "Selector") ?? GetAttr(element, "Target");
-        if (string.IsNullOrWhiteSpace(selectorText))
+        var className = GetAttr(element, "Class");
+        var id = GetAttr(element, "Id");
+        var tagName = GetAttr(element, "Tag");
+        var targetCount = new[] { className, id, tagName }.Count(value => !string.IsNullOrWhiteSpace(value));
+        if (targetCount == 0)
         {
-            sink.Error("<Style> requires Selector", Pos(element));
+            sink.Error("<Style> requires one target attribute: Class, Id, or Tag", Pos(element));
+            return [];
+        }
+        if (targetCount > 1)
+        {
+            sink.Error("<Style> accepts exactly one target attribute: Class, Id, or Tag", Pos(element));
             return [];
         }
         var setters = new List<KeyValuePair<string, string>>();
@@ -348,8 +356,12 @@ public sealed class WxamlParser
             setters.Add(new(property, value));
         }
         var declarations = styleParser.ParseDeclarations(setters, filePath, sink);
-        return styleParser.ParseSelectors(selectorText, filePath, sink)
-            .Select(selector => new UxStyleRule([selector], declarations, Pos(element))).ToArray();
+        var selector = className is not null
+            ? new StyleSelector(StyleSelectorKind.Class, className, Pos(element))
+            : id is not null
+                ? new StyleSelector(StyleSelectorKind.Id, id, Pos(element))
+                : new StyleSelector(StyleSelectorKind.Tag, tagName!, Pos(element));
+        return [new UxStyleRule([selector], declarations, Pos(element))];
     }
 
     private UxNode ParseElement(IElement el, string filePath, DiagnosticSink sink, IReadOnlyList<UxImportRef> imports, bool itemScope)
@@ -482,7 +494,9 @@ public sealed class WxamlParser
         isStatic = isStatic && attrs.Any(IsDynamicAttribute);
         if (isConst)
             ValidateConstSubtree(tag, isComponent, attrs, children, sink, Pos(el));
-        var displayTag = ToPascalTag(tag);
+        var displayTag = isComponent
+            ? imports.First(import => import.Name.Equals(tag, StringComparison.OrdinalIgnoreCase)).Name
+            : ToPascalTag(tag);
         UxNode result = new UxElement(displayTag, isComponent, attrs, children, Pos(el), isStatic, isConst);
         return result;
     }
@@ -622,7 +636,7 @@ public sealed class WxamlParser
     private static AttrKind ClassifyAttr(string tag, string attrName, bool isComponent)
     {
         if (attrName.StartsWith("data-", StringComparison.OrdinalIgnoreCase)) return AttrKind.Dataset;
-        if (attrName.Equals("model", StringComparison.OrdinalIgnoreCase)) return AttrKind.Model;
+        if (attrName.Equals("Model", StringComparison.OrdinalIgnoreCase)) return AttrKind.Model;
         if (attrName.Equals("Class", StringComparison.OrdinalIgnoreCase)) return AttrKind.Class;
         if (attrName.Equals("Style", StringComparison.OrdinalIgnoreCase)) return AttrKind.Style;
         // Existing PascalCase templates use Source, whereas UX markup uses src.

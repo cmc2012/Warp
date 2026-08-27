@@ -34,19 +34,19 @@ src/
       Notice.js
 ```
 
-- 页面根元素为 `Page`，由页面目录名发现。
+- 页面根元素为 `Page`。构建器优先读取 `manifest.yaml` 的 `router.pages`；每个页面键的最后一段对应 `src/pages/<名称>/<名称>.wxaml`。
 - 可复用组件根元素为 `Component`，只能通过 `Import` 使用。
 - 页面或组件的 `.js` 文件缺失时，编译器报告错误。
 - `x:Class` 可省略；省略时由文件名推断。显式名称必须是有效的 JavaScript 标识符。
 
 ## 词法和 XML 结构
 
-WXAML 使用严格的 XML 结构。元素和属性名称不区分大小写，但推荐使用本参考中的 PascalCase 形式。每个文件恰有一个 `Page` 或 `Component` 根元素。
+WXAML 使用严格的 XML 结构。元素和属性名称不区分大小写，但推荐使用本参考中的 PascalCase 形式。页面和组件文件分别以一个 `Page` 或 `Component` 为根；仅供样式导入的资源文件则以 `ResourceDictionary`、`Styles`、`Page.Styles` 或 `Component.Styles` 为根。
 
 ```xml
 <Page x:Class="Home">
   <Page.Styles>
-    <Style Selector=".page">
+    <Style Class="page">
       <Setter Property="padding" Value="16px" />
     </Style>
   </Page.Styles>
@@ -59,7 +59,27 @@ WXAML 使用严格的 XML 结构。元素和属性名称不区分大小写，但
 
 项目配置只能位于项目根目录的 `manifest.yaml`。`manifest.json`、`manifest.yml` 和位于源目录中的 manifest 都不是有效的源配置。构建时会从 YAML 生成设备包所需的输出 manifest；生成目录不是源文件编辑位置。
 
-`Page.Styles` 或 `Component.Styles` 必须位于所有内容节点之前。`Import` 是根元素的直接子元素，并位于样式段之后、内容之前。
+### 编译器配置
+
+`config.minifyIdentifiers` 控制标识符短名化 pass，默认值为 `true`：
+
+```yaml
+config:
+  logLevel: log
+  designWidth: device-width
+  minifyIdentifiers: true
+```
+
+启用时，编译器会压缩页面、组件及 inline 组件合并后的普通方法名，并在生成 JSC 时压缩函数局部变量和参数名。关闭它可使生成的 JavaScript/JSC 保留这些源名称，便于调试、排查兼容性问题或对照源码：
+
+```yaml
+config:
+  minifyIdentifiers: false
+```
+
+这是仅在构建期读取的配置，不会写入输出目录的运行时 `manifest.json`。即使启用，动态 `this[name]` 访问的组件也会保守地保留方法名。
+
+`Page.Styles` 或 `Component.Styles` 必须位于所有内容节点之前。`Import` 是根元素的直接子元素；建议放在样式段之后、内容之前，放在内容之后会产生警告。
 
 注释使用标准 XML 注释：`<!-- comment -->`。
 
@@ -109,7 +129,7 @@ WXAML 使用严格的 XML 结构。元素和属性名称不区分大小写，但
 | `Text` | 文本元素的内容 |
 | `Source`、`src` | 图像、视频、动画等资源位置 |
 | `Value` | 输入、进度和选择控件的值 |
-| `model` | 双向绑定 |
+| `Model` | 双向绑定 |
 | `data-*` | 事件数据集 |
 
 属性名会按元素的规则规范化。例如 `data-item-id` 作为数据集字段 `itemId` 使用。受限枚举属性会在编译时检查其取值。
@@ -129,11 +149,11 @@ WXAML 使用严格的 XML 结构。元素和属性名称不区分大小写，但
 
 ### 双向绑定
 
-`model` 的值必须是可赋值的绑定或表达式：
+`Model` 的值必须是可赋值的绑定或表达式：
 
 ```xml
-<Input model="{Binding name}" />
-<Switch model="{Expr settings.enabled}" />
+<Input Model="{Binding name}" />
+<Switch Model="{Expr settings.enabled}" />
 ```
 
 ## 绑定和表达式
@@ -207,7 +227,7 @@ WXAML 使用严格的 XML 结构。元素和属性名称不区分大小写，但
 <!-- components/Badge/Badge.wxaml -->
 <Component x:Class="Badge">
   <Component.Styles>
-    <Style Selector=".badge"><Setter Property="padding" Value="4px" /></Style>
+    <Style Class="badge"><Setter Property="padding" Value="4px" /></Style>
   </Component.Styles>
   <Div Class="badge"><Text Text="{Binding text}" /></Div>
 </Component>
@@ -218,7 +238,7 @@ WXAML 使用严格的 XML 结构。元素和属性名称不区分大小写，但
 ```xml
 <Page x:Class="Home">
   <Import Name="Badge" Source="../../components/Badge/Badge.wxaml" />
-  <Badge text="{Binding status}" onClick="openStatus" />
+  <Badge Text="{Binding status}" onClick="openStatus" />
 </Page>
 ```
 
@@ -234,11 +254,11 @@ WXAML 使用严格的 XML 结构。元素和属性名称不区分大小写，但
         Inline="true" />
 ```
 
-内联会把组件模板和样式展开到每个调用点，不生成组件模块或组件实例。它只适用于无状态组件：脚本只能声明 `props` 与空的 `data` 对象，且组件不能导入其他组件。包含状态、生命周期、方法或嵌套组件的导入会产生编译错误；移除 `Inline="true"` 即恢复普通组件语义。
+内联会把组件模板和样式展开到每个调用点，不生成组件模块或组件实例。它只适用于无状态组件：脚本只能声明 `props`、空的 `data` 对象、普通方法和生命周期钩子，并且只能嵌套导入其他 inline 组件。inline 方法会合并到宿主方法表，生命周期钩子会合并到对应的宿主生命周期；包含状态、普通组件导入或其他模块级逻辑的组件会产生编译错误。移除 `Inline="true"` 即恢复普通组件语义。
 
 ### 属性和事件
 
-组件上的非 `on` 属性为 props。组件 `.js` 的 `props` 数组声明可接受的属性名称：
+组件上的普通属性为 Props。WXAML 调用点使用 PascalCase 名称，编译后会转换为运行时的 camelCase Prop 名称；例如 `Text` 对应 `text`。组件 `.js` 的 `props` 数组声明可接受的运行时属性名称：
 
 ```js
 export default {
@@ -247,25 +267,28 @@ export default {
 }
 ```
 
-组件模板中通过 `{Binding text}` 读取 prop。调用方使用 `on<Event>` 传递组件事件处理器；在组件实现中，事件名与 `on` 前缀一致。传递未在 `props` 中声明的普通属性会产生警告。组件样式目前按普通样式规则参与页面样式表；不要依赖自动作用域隔离。
+组件模板中通过 `{Binding text}` 读取 Prop。调用方使用 `on<Event>` 传递组件事件处理器；在组件实现中，事件名与 `on` 前缀一致。`Model` 是组件调用支持的双向绑定特性，传入的值必须可赋值，编译器将其转换为运行时的 `model` 选项。传递未在 `props` 中声明的普通属性会产生警告。组件样式目前按普通样式规则参与页面样式表；不要依赖自动作用域隔离。
 
 ## 样式和媒体查询
 
-WXAML 样式使用 XAML 形式。`Style` 需要 `Selector`（或 `Target`），每个 `Setter` 需要 `Property` 和 `Value`：
+WXAML 样式使用 XAML 形式。每个 `Style` 必须且只能使用一个目标属性：`Class`、`Id` 或 `Tag`；每个 `Setter` 需要 `Property` 和 `Value`：
 
 ```xml
 <Page.Styles>
-  <Style Selector=".card, .panel">
+  <Style Class="card">
     <Setter Property="padding" Value="12px 16px" />
     <Setter Property="border" Value="2px solid #ffffff" />
   </Style>
-  <Style Selector="Text">
+  <Style Id="primary-panel">
+    <Setter Property="padding" Value="12px 16px" />
+  </Style>
+  <Style Tag="Text">
     <Setter Property="font-size" Value="16px" />
   </Style>
 </Page.Styles>
 ```
 
-选择器支持类选择器、ID 选择器、元素选择器和逗号分组。盒模型和边框简写会被展开。属性名可使用连字符或驼峰形式。
+`Class` 和 `Id` 的值不含 `.` 或 `#` 前缀；`Tag` 使用元素名称。要复用同一组声明，请写多个 `Style`。盒模型和边框简写会被展开。属性名可使用连字符或驼峰形式。
 
 ### 样式资源
 
@@ -274,11 +297,11 @@ WXAML 样式使用 XAML 形式。`Style` 需要 `Selector`（或 `Target`），�
 ```xml
 <Page.Styles>
   <Import Source="../../styles/common.wxaml" />
-  <Style Selector=".page"><Setter Property="padding" Value="16px" /></Style>
+  <Style Class="page"><Setter Property="padding" Value="16px" /></Style>
 </Page.Styles>
 ```
 
-资源文件的根元素为 `ResourceDictionary` 或 `Styles`，内部可继续包含 `Import`、`Style` 和 `Media`。缺失资源或循环导入是编译错误。
+资源文件的根元素可以是 `ResourceDictionary`、`Styles`、`Page.Styles` 或 `Component.Styles`，内部可继续包含 `Import`、`Style` 和 `Media`。缺失资源或循环导入是编译错误。
 
 ### Media
 
@@ -286,7 +309,7 @@ WXAML 样式使用 XAML 形式。`Style` 需要 `Selector`（或 `Target`），�
 
 ```xml
 <Media Query="(min-width: 320px)">
-  <Style Selector=".page"><Setter Property="padding" Value="24px" /></Style>
+  <Style Class="page"><Setter Property="padding" Value="24px" /></Style>
 </Media>
 ```
 
@@ -302,7 +325,7 @@ WXAML 样式使用 XAML 形式。`Style` 需要 `Selector`（或 `Target`），�
 </Stack>
 ```
 
-常量子树不能包含绑定、表达式、事件、`model`、条件、列表或自定义组件。违反任一条件会产生错误。`Const` 不应被用于包含用户输入或交互的区域。
+常量子树不能包含绑定、表达式、事件、`Model`、条件、列表或自定义组件。违反任一条件会产生错误。`Const` 不应被用于包含用户输入或交互的区域。
 
 ## 代码文件
 
@@ -315,10 +338,8 @@ export default {
   data: {
     count: initialCount
   },
-  methods: {
-    increment() {
-      this.count += 1;
-    }
+  increment() {
+    this.count += 1;
   }
 };
 ```

@@ -49,9 +49,9 @@ public sealed class TemplateAstTranslationTests
         const string markup = """
             <Page x:Class="Styled">
               <Page.Styles>
-                <Style Selector=".page"><Setter Property="margin" Value="10px 6px" /><Setter Property="color" Value="#fff" /></Style>
+                <Style Class="page"><Setter Property="margin" Value="10px 6px" /><Setter Property="color" Value="#fff" /></Style>
                 <Media Query="(min-width: 320px), screen and (max-height: 480px)">
-                  <Style Selector="text"><Setter Property="font-size" Value="18px" /></Style>
+                  <Style Tag="Text"><Setter Property="font-size" Value="18px" /></Style>
                 </Media>
               </Page.Styles>
               <Stack Class="page" />
@@ -66,6 +66,28 @@ public sealed class TemplateAstTranslationTests
         Assert.Contains("condition: \"screen and (min-width: 320px),screen and (max-height: 480px)\"", output, StringComparison.Ordinal);
         Assert.Contains("fontSize: \"18px\"", output, StringComparison.Ordinal);
         Assert.NotEmpty(JavaScriptSyntax.ParseScript("const styles = " + output + ";", "generated.js").Body);
+    }
+
+    [Fact]
+    public void Emits_tag_selectors_in_regular_and_media_only_style_sheets()
+    {
+        var sink = new DiagnosticSink();
+        var document = new WxamlParser().Parse("""
+            <Page x:Class="Styled">
+              <Page.Styles>
+                <Media Query="(min-width: 320px)">
+                  <Style Tag="Text"><Setter Property="color" Value="#fff" /></Style>
+                </Media>
+              </Page.Styles>
+              <Text Text="Hello" />
+            </Page>
+            """, "styled.wxaml", sink);
+
+        var output = JavaScriptAstWriter.Write(StyleTranslator.Translate(document.Styles));
+
+        Assert.False(sink.HasErrors, string.Join("\n", sink.Diagnostics));
+        Assert.Contains("[[2, \"text\"]]", output, StringComparison.Ordinal);
+        Assert.Contains("condition: \"screen and (min-width: 320px)\"", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -104,7 +126,7 @@ public sealed class TemplateAstTranslationTests
         var resourcePath = Path.Combine(directory, "shared.wxaml");
         try
         {
-            File.WriteAllText(resourcePath, "<ResourceDictionary><Style Selector=\".shared\"><Setter Property=\"color\" Value=\"#fff\" /></Style><Media Query=\"(min-width: 320px)\"><Style Selector=\"text\"><Setter Property=\"font-size\" Value=\"18px\" /></Style></Media></ResourceDictionary>");
+            File.WriteAllText(resourcePath, "<ResourceDictionary><Style Class=\"shared\"><Setter Property=\"color\" Value=\"#fff\" /></Style><Media Query=\"(min-width: 320px)\"><Style Tag=\"Text\"><Setter Property=\"font-size\" Value=\"18px\" /></Style></Media></ResourceDictionary>");
             var sink = new DiagnosticSink();
             var document = new WxamlParser().Parse("<Page x:Class=\"Styled\"><Page.Styles><Import Source=\"./shared.wxaml\" /></Page.Styles><Stack /></Page>", pagePath, sink);
 
@@ -140,7 +162,7 @@ public sealed class TemplateAstTranslationTests
     {
         const string markup = """
             <Page x:Class="Sample">
-              <Input model="{Binding name}" Change="save" />
+              <Input Model="{Binding name}" Change="save" />
               <List ItemsSource="{Binding items}" Key="id"><ItemTemplate><Text Text="{Binding name}" /></ItemTemplate></List>
               <If Test="{Binding visible}"><Text Text="shown" /></If><Else><Image Source="/hidden.png" /></Else>
             </Page>

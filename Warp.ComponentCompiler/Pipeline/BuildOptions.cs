@@ -6,4 +6,5 @@ public sealed record BuildOptions(
     string OutputDir = "build",
     bool OptimizeCssAttr = false,
     bool EnableStats = false,
-    bool KeepJavaScript = false);
+    bool KeepJavaScript = false,
+    bool CompileJavaScript = true);

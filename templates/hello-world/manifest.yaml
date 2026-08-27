@@ -8,6 +8,8 @@ deviceTypeList:
 config:
   logLevel: log
   designWidth: device-width
+  # Set false to retain source method/local names in generated JavaScript and bytecode.
+  minifyIdentifiers: true
 router:
   entry: pages/home
   pages:

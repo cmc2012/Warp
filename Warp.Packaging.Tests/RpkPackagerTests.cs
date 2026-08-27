@@ -20,16 +20,16 @@ public sealed class RpkPackagerTests
         try
         {
             Directory.CreateDirectory(Path.Combine(build, "common"));
-            await File.WriteAllBytesAsync(Path.Combine(build, "app.jsc"), [0, 1, 2, 3]);
-            await File.WriteAllTextAsync(Path.Combine(build, "common", "asset.txt"), "asset");
-            await File.WriteAllTextAsync(Path.Combine(build, "manifest.json"), "{\"router\":{\"entry\":\"pages/home\"}}");
+            await File.WriteAllBytesAsync(Path.Combine(build, "app.jsc"), [0, 1, 2, 3], TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(build, "common", "asset.txt"), "asset", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(build, "manifest.json"), "{\"router\":{\"entry\":\"pages/home\"}}", TestContext.Current.CancellationToken);
 
             var sink = new DiagnosticSink();
-            var result = await new RpkPackager(sink).PackAsync(build, output);
+            var result = await new RpkPackager(sink).PackAsync(build, output, TestContext.Current.CancellationToken);
 
             Assert.False(sink.HasErrors, string.Join(Environment.NewLine, sink.Diagnostics));
             Assert.Equal(output, result);
-            var package = await File.ReadAllBytesAsync(output);
+            var package = await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken);
             Assert.True(package.Length > 4);
             Assert.Equal((byte)'P', package[0]);
             Assert.Equal((byte)'K', package[1]);
@@ -38,6 +38,8 @@ public sealed class RpkPackagerTests
             using var archive = new ZipArchive(new MemoryStream(package), ZipArchiveMode.Read);
             Assert.Contains(archive.Entries, entry => entry.FullName == "META-INF/");
             Assert.Contains(archive.Entries, entry => entry.FullName == "common/");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "META-INF/CERT");
+            Assert.Contains(archive.Entries, entry => entry.FullName == "META-INF/build.txt");
             Assert.Equal("Warp", JsonNode.Parse(await ReadEntryAsync(archive, "manifest.json"))?["packageInfo"]?["toolkit"]?.GetValue<string>());
         }
         finally
@@ -58,7 +60,7 @@ public sealed class RpkPackagerTests
     {
         var sink = new DiagnosticSink();
         var output = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".rpk");
-        var result = await new RpkPackager(sink).PackAsync(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()), output);
+        var result = await new RpkPackager(sink).PackAsync(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()), output, TestContext.Current.CancellationToken);
 
         Assert.Equal("", result);
         Assert.True(sink.HasErrors);
@@ -75,19 +77,19 @@ public sealed class RpkPackagerTests
         {
             Directory.CreateDirectory(Path.Combine(root, "sign", "debug"));
             Directory.CreateDirectory(build);
-            await File.WriteAllBytesAsync(Path.Combine(build, "app.jsc"), [0, 1, 2, 3]);
+            await File.WriteAllBytesAsync(Path.Combine(build, "app.jsc"), [0, 1, 2, 3], TestContext.Current.CancellationToken);
             using var key = RSA.Create(2048);
             var request = new CertificateRequest("CN=warp-test", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
-            await File.WriteAllTextAsync(Path.Combine(root, "sign", "debug", "private.pem"), key.ExportPkcs8PrivateKeyPem());
-            await File.WriteAllTextAsync(Path.Combine(root, "sign", "debug", "certificate.pem"), certificate.ExportCertificatePem());
+            await File.WriteAllTextAsync(Path.Combine(root, "sign", "debug", "private.pem"), key.ExportPkcs8PrivateKeyPem(), TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(root, "sign", "debug", "certificate.pem"), certificate.ExportCertificatePem(), TestContext.Current.CancellationToken);
 
             var sink = new DiagnosticSink();
-            var result = await new RpkPackager(sink).PackAsync(build, output, new RpkSigningOptions(ProjectDirectory: root));
+            var result = await new RpkPackager(sink).PackAsync(build, output, new RpkSigningOptions(ProjectDirectory: root), TestContext.Current.CancellationToken);
 
             Assert.False(sink.HasErrors, string.Join(Environment.NewLine, sink.Diagnostics));
             Assert.Equal(output, result);
-            var package = await File.ReadAllBytesAsync(output);
+            var package = await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken);
             Assert.True(package.AsSpan().IndexOf(certificate.Export(X509ContentType.Cert)) >= 0);
         }
         finally
@@ -97,21 +99,44 @@ public sealed class RpkPackagerTests
     }
 
     [Fact]
-    public async Task Rejects_a_build_without_the_required_bytecode_entry()
+    public async Task Rejects_a_build_without_an_app_entry()
     {
         var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
         var output = Path.Combine(root, "app.rpk");
         try
         {
             Directory.CreateDirectory(root);
-            await File.WriteAllTextAsync(Path.Combine(root, "app.js"), "exports.default = {};");
             var sink = new DiagnosticSink();
 
-            var result = await new RpkPackager(sink).PackAsync(root, output);
+            var result = await new RpkPackager(sink).PackAsync(root, output, TestContext.Current.CancellationToken);
 
             Assert.Equal("", result);
             Assert.True(sink.HasErrors);
             Assert.False(File.Exists(output));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Warns_when_packaging_a_JavaScript_only_build()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
+        var output = Path.Combine(root, "app.rpk");
+        try
+        {
+            Directory.CreateDirectory(root);
+            await File.WriteAllTextAsync(Path.Combine(root, "app.js"), "exports.default = {};", TestContext.Current.CancellationToken);
+            var sink = new DiagnosticSink();
+
+            var result = await new RpkPackager(sink).PackAsync(root, output, TestContext.Current.CancellationToken);
+
+            Assert.False(sink.HasErrors, string.Join(Environment.NewLine, sink.Diagnostics));
+            Assert.Equal(output, result);
+            Assert.Contains(sink.Diagnostics, diagnostic =>
+                diagnostic.Message.Contains("can be modified more easily", StringComparison.Ordinal));
         }
         finally
         {

@@ -3,18 +3,18 @@ namespace Warp.JsCompiler.Ir;
 // This is the pass-facing IR. It intentionally does not use serialized opcode
 // numbers, atom indexes, byte offsets, or closure indexes. Those belong to the
 // ECMAScript lowering IR produced by variable and label resolution.
-internal readonly record struct IrFunctionId(int Value);
-internal readonly record struct IrBlockId(int Value);
-internal readonly record struct IrScopeId(int Value);
-internal readonly record struct IrBindingId(int Value);
-internal readonly record struct IrConstantId(int Value);
+public readonly record struct IrFunctionId(int Value);
+public readonly record struct IrBlockId(int Value);
+public readonly record struct IrScopeId(int Value);
+public readonly record struct IrBindingId(int Value);
+public readonly record struct IrConstantId(int Value);
 
-internal readonly record struct SourceLocation(int Line, int Column)
+public readonly record struct SourceLocation(int Line, int Column)
 {
-    internal static readonly SourceLocation None = new(0, 0);
+    public static readonly SourceLocation None = new(0, 0);
 }
 
-internal enum IrFunctionKind : byte
+public enum IrFunctionKind : byte
 {
     Normal,
     Generator,
@@ -22,7 +22,7 @@ internal enum IrFunctionKind : byte
     AsyncGenerator,
 }
 
-internal enum IrFunctionForm : byte
+public enum IrFunctionForm : byte
 {
     Declaration,
     Expression,
@@ -37,7 +37,7 @@ internal enum IrFunctionForm : byte
     Script,
 }
 
-internal enum IrBindingKind : byte
+public enum IrBindingKind : byte
 {
     Normal,
     FunctionDeclaration,
@@ -51,7 +51,7 @@ internal enum IrBindingKind : byte
     PrivateGetterSetter,
 }
 
-internal sealed record IrBinding(
+public sealed record IrBinding(
     IrBindingId Id,
     string Name,
     IrScopeId Scope,
@@ -60,18 +60,18 @@ internal sealed record IrBinding(
     bool IsConst = false,
     bool IsLexical = false);
 
-internal sealed record IrScope(IrScopeId Id, IrScopeId? Parent, IReadOnlyList<IrBindingId> Bindings);
+public sealed record IrScope(IrScopeId Id, IrScopeId? Parent, IReadOnlyList<IrBindingId> Bindings);
 
-internal abstract record IrConstant(IrConstantId Id);
-internal sealed record IrNumberConstant(IrConstantId Id, double Value) : IrConstant(Id);
-internal sealed record IrStringConstant(IrConstantId Id, string Value) : IrConstant(Id);
-internal sealed record IrRegExpPatternConstant(IrConstantId Id, string Value) : IrConstant(Id);
+public abstract record IrConstant(IrConstantId Id);
+public sealed record IrNumberConstant(IrConstantId Id, double Value) : IrConstant(Id);
+public sealed record IrStringConstant(IrConstantId Id, string Value) : IrConstant(Id);
+public sealed record IrRegExpPatternConstant(IrConstantId Id, string Value) : IrConstant(Id);
 /// <summary>A byte string produced by the regular-expression compiler. It is
 /// deliberately distinct from source strings: it must stay in the constant
 /// pool rather than being folded into a dynamic atom.</summary>
-internal sealed record IrRegExpBytecodeConstant(IrConstantId Id, string Bytes) : IrConstant(Id);
-internal sealed record IrFunctionConstant(IrConstantId Id, IrFunctionId Function) : IrConstant(Id);
-internal sealed record IrTemplateConstant(IrConstantId Id, IReadOnlyList<string> Cooked,
+public sealed record IrRegExpBytecodeConstant(IrConstantId Id, string Bytes) : IrConstant(Id);
+public sealed record IrFunctionConstant(IrConstantId Id, IrFunctionId Function) : IrConstant(Id);
+public sealed record IrTemplateConstant(IrConstantId Id, IReadOnlyList<string> Cooked,
     IReadOnlyList<string> Raw) : IrConstant(Id);
 
 /// <summary>
@@ -80,67 +80,67 @@ internal sealed record IrTemplateConstant(IrConstantId Id, IReadOnlyList<string>
 /// resolution replaces those operations only after walking the final IR in
 /// bytecode order, which is what determines ECMAScript closure ordering.
 /// </summary>
-internal sealed record IrInstruction(
+public sealed record IrInstruction(
     string Operation,
     IReadOnlyList<IrOperand> Operands,
     SourceLocation Location);
 
-internal abstract record IrOperand;
-internal sealed record ImmediateOperand(long Value) : IrOperand;
+public abstract record IrOperand;
+public sealed record ImmediateOperand(long Value) : IrOperand;
 /// <summary>
 /// An atom operand.  The empty string is distinct from JS_ATOM_NULL in the
 /// bytecode ABI, so anonymous classes retain that distinction explicitly.
 /// </summary>
-internal sealed record AtomOperand(string Value, bool IsEmptyStringAtom = false) : IrOperand
+public sealed record AtomOperand(string Value, bool IsEmptyStringAtom = false) : IrOperand
 {
-    internal static AtomOperand EmptyString { get; } = new(string.Empty, IsEmptyStringAtom: true);
+    public static AtomOperand EmptyString { get; } = new(string.Empty, IsEmptyStringAtom: true);
 }
-internal sealed record IrScopeOperand(IrScopeId Scope) : IrOperand;
+public sealed record IrScopeOperand(IrScopeId Scope) : IrOperand;
 /// <summary>Symbolic IR edge used by instructions such as OP_catch.</summary>
-internal sealed record IrBlockOperand(IrBlockId Block) : IrOperand;
-internal sealed record IrBindingOperand(IrBindingId Binding) : IrOperand;
-internal sealed record IrConstantOperand(IrConstantId Constant) : IrOperand;
-internal sealed record IrFunctionOperand(IrFunctionId Function) : IrOperand;
+public sealed record IrBlockOperand(IrBlockId Block) : IrOperand;
+public sealed record IrBindingOperand(IrBindingId Binding) : IrOperand;
+public sealed record IrConstantOperand(IrConstantId Constant) : IrOperand;
+public sealed record IrFunctionOperand(IrFunctionId Function) : IrOperand;
 
-internal abstract record IrTerminator(SourceLocation Location)
+public abstract record IrTerminator(SourceLocation Location)
 {
-    internal abstract IEnumerable<IrBlockId> Successors { get; }
+    public abstract IEnumerable<IrBlockId> Successors { get; }
 }
 
-internal sealed record IrGotoTerminator(IrBlockId Target, SourceLocation Location,
+public sealed record IrGotoTerminator(IrBlockId Target, SourceLocation Location,
     bool PreserveAfterResolution = false)
     : IrTerminator(Location)
 {
-    internal override IEnumerable<IrBlockId> Successors => [Target];
+    public override IEnumerable<IrBlockId> Successors => [Target];
 }
 
-internal sealed record IrBranchTerminator(IrBlockId WhenTrue, IrBlockId WhenFalse,
+public sealed record IrBranchTerminator(IrBlockId WhenTrue, IrBlockId WhenFalse,
     SourceLocation Location) : IrTerminator(Location)
 {
-    internal override IEnumerable<IrBlockId> Successors => [WhenTrue, WhenFalse];
+    public override IEnumerable<IrBlockId> Successors => [WhenTrue, WhenFalse];
 }
 
-internal sealed record IrReturnTerminator(bool HasValue, SourceLocation Location)
+public sealed record IrReturnTerminator(bool HasValue, SourceLocation Location)
     : IrTerminator(Location)
 {
-    internal override IEnumerable<IrBlockId> Successors => [];
+    public override IEnumerable<IrBlockId> Successors => [];
 }
 
-internal sealed record IrThrowTerminator(SourceLocation Location) : IrTerminator(Location)
+public sealed record IrThrowTerminator(SourceLocation Location) : IrTerminator(Location)
 {
-    internal override IEnumerable<IrBlockId> Successors => [];
+    public override IEnumerable<IrBlockId> Successors => [];
 }
 
 /// <summary>An instruction such as OP_throw_error is already terminal.</summary>
-internal sealed record IrInstructionTerminal(SourceLocation Location) : IrTerminator(Location)
+public sealed record IrInstructionTerminal(SourceLocation Location) : IrTerminator(Location)
 {
-    internal override IEnumerable<IrBlockId> Successors => [];
+    public override IEnumerable<IrBlockId> Successors => [];
 }
 
-internal sealed record IrGosubTerminator(IrBlockId Finally, IrBlockId Continuation,
+public sealed record IrGosubTerminator(IrBlockId Finally, IrBlockId Continuation,
     SourceLocation Location) : IrTerminator(Location)
 {
-    internal override IEnumerable<IrBlockId> Successors => [Finally, Continuation];
+    public override IEnumerable<IrBlockId> Successors => [Finally, Continuation];
 }
 
 /// <summary>
@@ -148,25 +148,25 @@ internal sealed record IrGosubTerminator(IrBlockId Finally, IrBlockId Continuati
 /// is deliberately distinct from JavaScript return: the runtime resumes at
 /// the instruction following the corresponding <c>gosub</c>.
 /// </summary>
-internal sealed record IrFinallyReturnTerminator(SourceLocation Location) : IrTerminator(Location)
+public sealed record IrFinallyReturnTerminator(SourceLocation Location) : IrTerminator(Location)
 {
-    internal override IEnumerable<IrBlockId> Successors => [];
+    public override IEnumerable<IrBlockId> Successors => [];
 }
 
-internal sealed class IrBlock(IrBlockId id)
+public sealed class IrBlock(IrBlockId id)
 {
-    internal IrBlockId Id { get; } = id;
-    internal List<IrInstruction> Instructions { get; } = [];
-    internal IrTerminator? Terminator { get; set; }
+    public IrBlockId Id { get; } = id;
+    public List<IrInstruction> Instructions { get; } = [];
+    public IrTerminator? Terminator { get; set; }
     /// <summary>
     /// A parser label restored lexical liveness even though the runtime CFG
     /// has no ordinary predecessor (notably an inner try's label_end before
     /// an enclosing try emits its normal finally path).
     /// </summary>
-    internal bool ParserContinuation { get; set; }
+    public bool ParserContinuation { get; set; }
 }
 
-internal sealed record IrFunctionOptions(
+public sealed record IrFunctionOptions(
     IrFunctionKind Kind,
     IrFunctionForm Form,
     bool Strict,
@@ -183,7 +183,7 @@ internal sealed record IrFunctionOptions(
     bool IsEval,
     bool IsGlobalVariableEnvironment);
 
-internal sealed class IrFunction(
+public sealed class IrFunction(
     IrFunctionId id,
     string? name,
     IrFunctionOptions options,
@@ -196,58 +196,74 @@ internal sealed class IrFunction(
     ushort definedArgumentCount = 0,
     SourceLocation declarationLocation = default)
 {
-    internal IrFunctionId Id { get; } = id;
-    internal string? Name { get; } = name;
-    internal IrFunctionOptions Options { get; } = options;
-    internal IrScopeId ArgumentScope { get; } = argumentScope;
-    internal IrScopeId BodyScope { get; } = bodyScope;
-    internal IrBlockId Entry { get; } = entry;
-    internal IrFunctionId? ParentFunction { get; } = parentFunction;
-    internal IrScopeId? ParentScope { get; } = parentScope;
-    internal IrConstantId? ParentConstant { get; private set; } = parentConstant;
+    public IrFunctionId Id { get; } = id;
+    public string? Name { get; } = name;
+    public IrFunctionOptions Options { get; } = options;
+    public IrScopeId ArgumentScope { get; } = argumentScope;
+    public IrScopeId BodyScope { get; } = bodyScope;
+    public IrBlockId Entry { get; } = entry;
+    public IrFunctionId? ParentFunction { get; } = parentFunction;
+    public IrScopeId? ParentScope { get; } = parentScope;
+    public IrConstantId? ParentConstant { get; private set; } = parentConstant;
     /// <summary>
     /// Source parsing may require a home object for runtime brand checks even
     /// where the body has no explicit <c>super</c> expression.
     /// </summary>
-    internal bool RequiresHomeObject { get; set; }
+    public bool RequiresHomeObject { get; set; }
     /// <summary>Completes the parent constant-pool link for a predeclared child.</summary>
-    internal void LinkParentConstant(IrConstantId constant)
+    public void LinkParentConstant(IrConstantId constant)
     {
         if (ParentConstant is not null)
             throw new InvalidOperationException("A child function can only be linked once.");
         ParentConstant = constant;
     }
-    internal ushort DefinedArgumentCount { get; } = definedArgumentCount;
-    internal SourceLocation DeclarationLocation { get; } = declarationLocation;
-    internal List<IrScope> Scopes { get; } = [];
-    internal List<IrBinding> Bindings { get; } = [];
-    internal List<IrConstant> Constants { get; } = [];
-    internal List<IrBlock> Blocks { get; } = [];
+    public ushort DefinedArgumentCount { get; } = definedArgumentCount;
+    public SourceLocation DeclarationLocation { get; } = declarationLocation;
+    public List<IrScope> Scopes { get; } = [];
+    public List<IrBinding> Bindings { get; } = [];
+    public List<IrConstant> Constants { get; } = [];
+    public List<IrBlock> Blocks { get; } = [];
     // Block layout may temporarily remove forward targets and append them at
     // their parser-order position.  CFG identity is monotonic and must not
     // be recovered from the current layout list.
-    internal int NextBlockId { get; set; }
+    public int NextBlockId { get; set; }
 }
 
-internal sealed class IrModule
+public sealed class IrModule
 {
-    internal List<IrFunction> Functions { get; } = [];
-    internal List<string> RequiredModules { get; } = [];
-    internal List<IrImport> Imports { get; } = [];
-    internal List<IrExport> Exports { get; } = [];
-    internal List<int> StarExports { get; } = [];
+    public List<IrFunction> Functions { get; } = [];
+    public List<string> RequiredModules { get; } = [];
+    public List<IrImport> Imports { get; } = [];
+    public List<IrExport> Exports { get; } = [];
+    public List<int> StarExports { get; } = [];
 }
 
-internal sealed record IrImport(IrBindingId Binding, string ImportName, int RequiredModuleIndex,
+/// <summary>
+/// The complete lowered module graph, keyed by canonical module name. Graph
+/// passes may inspect or transform IR across module boundaries before each
+/// module enters the ordinary per-module pass pipeline.
+/// </summary>
+public sealed class IrModuleGraph(
+    IReadOnlyDictionary<string, IrModule> modules,
+    string entryModule,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<int, string>> dependencies)
+{
+    public IReadOnlyDictionary<string, IrModule> Modules { get; } = modules;
+    public string EntryModule { get; } = entryModule;
+    /// <summary>Resolved internal dependency module names by importer and required-module index.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<int, string>> Dependencies { get; } = dependencies;
+}
+
+public sealed record IrImport(IrBindingId Binding, string ImportName, int RequiredModuleIndex,
     bool IsNamespace = false);
-internal abstract record IrExport(string ExportName);
-internal sealed record IrLocalExport(string LocalName, string Name) : IrExport(Name);
-internal sealed record IrIndirectExport(int RequiredModuleIndex, string LocalName, string Name) : IrExport(Name);
+public abstract record IrExport(string ExportName);
+public sealed record IrLocalExport(string LocalName, string Name) : IrExport(Name);
+public sealed record IrIndirectExport(int RequiredModuleIndex, string LocalName, string Name) : IrExport(Name);
 
 /// <summary>Structural validation shared by every middle-end pass boundary.</summary>
-internal static class IrVerifier
+public static class IrVerifier
 {
-    internal static void Verify(IrModule module)
+    public static void Verify(IrModule module)
     {
         var functionIds = new HashSet<IrFunctionId>();
         foreach (var function in module.Functions)
@@ -268,7 +284,7 @@ internal static class IrVerifier
         }
     }
 
-    internal static void Verify(IrFunction function)
+    public static void Verify(IrFunction function)
     {
         var scopes = function.Scopes.ToDictionary(scope => scope.Id);
         var bindings = function.Bindings.ToDictionary(binding => binding.Id);

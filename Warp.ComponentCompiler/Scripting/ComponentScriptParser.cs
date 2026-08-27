@@ -6,7 +6,7 @@ namespace Warp.ComponentCompiler.Scripting;
 
 /// <summary>
 /// Projects the canonical JavaScript compiler AST into the small semantic
-/// model needed by WXAML translation. Parsing itself remains the sole
+/// Model needed by WXAML translation. Parsing itself remains the sole
 /// responsibility of <c>Warp.JsCompiler</c>.
 /// </summary>
 public sealed class ComponentScriptParser
@@ -141,7 +141,12 @@ public sealed class ComponentScriptParser
         "private" => JsPropertyKind.Private,
         "public" => JsPropertyKind.Public,
         "props" => JsPropertyKind.Props,
-        "onInit" or "onReady" or "onShow" or "onHide" or "onBackPress" or "onDestroy" or "onCreate" => JsPropertyKind.Lifecycle,
+        // These names are invoked by the Vela runtime through the exported
+        // ViewModel/App object, rather than by a statically visible call in
+        // user code.  They are therefore part of the runtime ABI and must not
+        // be treated as ordinary minifiable methods.
+        "onInit" or "onReady" or "onShow" or "onHide" or "onDestroy" or "onBackPress" or
+        "onRefresh" or "onConfigurationChanged" or "onCreate" or "onError" => JsPropertyKind.Lifecycle,
         _ when property.Kind is JsObjectPropertyKind.Method or JsObjectPropertyKind.Getter or JsObjectPropertyKind.Setter => JsPropertyKind.Method,
         _ when property.Value is JsFunctionExpression => JsPropertyKind.Method,
         _ => JsPropertyKind.Unknown,

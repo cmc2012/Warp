@@ -1,7 +1,7 @@
 namespace Warp.JsCompiler.Encoding;
 
 /// <summary>Operand formats from ECMAScript 2021-03-27 ecma-opcode.h.</summary>
-internal enum TargetOpcodeOperandFormat
+public enum TargetOpcodeOperandFormat
 {
     None, NoneInt, NoneLocal, NoneArgument, NoneVarReference,
     U8, I8, Local8, Constant8, Label8, U16, I16, Label16,
@@ -10,14 +10,14 @@ internal enum TargetOpcodeOperandFormat
     AtomU8, AtomU16, AtomLabelU8, AtomLabelU16, LabelU16,
 }
 
-internal enum TargetOpcodeEncodingKind
+public enum TargetOpcodeEncodingKind
 {
     Canonical,
     Temporary,
     Short,
 }
 
-internal enum TargetOpcodeControlKind
+public enum TargetOpcodeControlKind
 {
     Fallthrough,
     ConditionalBranch,
@@ -28,7 +28,7 @@ internal enum TargetOpcodeControlKind
     Terminal,
 }
 
-internal enum TargetOpcodeSuccessorKind
+public enum TargetOpcodeSuccessorKind
 {
     Fallthrough,
     Target,
@@ -47,7 +47,7 @@ internal readonly record struct TargetOpcodeSuccessorRule(
 /// One row of the ECMAScript opcode table. Temporary and short opcodes deliberately
 /// overlap numerically from OP_TEMP_START; EncodingKind disambiguates them.
 /// </summary>
-internal sealed record TargetOpcodeDescriptor(
+public sealed record TargetOpcodeDescriptor(
     byte Code,
     string Name,
     byte Size,
@@ -110,7 +110,7 @@ internal sealed record TargetOpcodeDescriptor(
 /// Complete opcode metadata for the non-BIGNUM ECMAScript 2021-03-27 ABI used by
 /// this compiler. Rows are in ecma-opcode.h order.
 /// </summary>
-internal static class TargetOpcodeCatalog
+public static class TargetOpcodeCatalog
 {
     internal const int CanonicalCount = 178;
     internal const int TemporaryCount = 15;
@@ -388,16 +388,15 @@ internal static class TargetOpcodeCatalog
     private static readonly IReadOnlyDictionary<string, TargetOpcodeDescriptor> ByName =
         Entries.ToDictionary(static entry => entry.Name, StringComparer.Ordinal);
 
-    internal static IReadOnlyList<TargetOpcodeDescriptor> All => Entries;
+    public static IReadOnlyList<TargetOpcodeDescriptor> All => Entries;
 
-    internal static TargetOpcodeDescriptor GetFinal(byte code) =>
+    public static TargetOpcodeDescriptor GetFinal(byte code) =>
         FinalByCode.TryGetValue(code, out var descriptor)
             ? descriptor
             : throw new ArgumentOutOfRangeException(nameof(code), code, "Not a final ECMAScript opcode.");
 
-    internal static TargetOpcodeDescriptor Get(string name) =>
+    public static TargetOpcodeDescriptor Get(string name) =>
         ByName.TryGetValue(name, out var descriptor)
             ? descriptor
             : throw new ArgumentException($"Unknown ECMAScript opcode '{name}'.", nameof(name));
 }
-

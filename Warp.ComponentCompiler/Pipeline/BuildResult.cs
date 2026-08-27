@@ -13,7 +13,8 @@ public sealed record PageBuildResult(
 public sealed record BuildResult(
     IReadOnlyList<PageBuildResult> Pages,
     IReadOnlyList<Diagnostic> Diagnostics,
-    bool Success)
+    bool Success,
+    bool BytecodeCompiled = true)
 {
     public void Print(TextWriter w, bool verbose = false)
     {
@@ -23,7 +24,9 @@ public sealed record BuildResult(
         foreach (var d in Diagnostics.Where(d => d.Level >= LogLevel.Warning))
             w.WriteLine(d.ToString());
         w.WriteLine(Success
-            ? $"Build succeeded: {Pages.Count} page(s) compiled to bytecode."
+            ? BytecodeCompiled
+                ? $"Build succeeded: {Pages.Count} page(s) compiled to bytecode."
+                : $"Build succeeded: {Pages.Count} page(s) generated as JavaScript (JSC skipped)."
             : $"Build failed with {Diagnostics.Count(d => d.IsError)} error(s).");
     }
 }

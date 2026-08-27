@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Warp.ComponentCompiler.Analysis;
+using Warp.ComponentCompiler.Ir;
 using Warp.ComponentSyntax.Ast;
 using Warp.Diagnostics;
 using Warp.JsCompiler.Api;
@@ -19,10 +20,14 @@ public sealed class TemplateTranslator
     private readonly IReadOnlyDictionary<string, InlineComponentDefinition> _inlineComponents;
     private readonly IReadOnlyDictionary<string, JsExpression> _inlineBindings;
     private readonly IReadOnlyDictionary<string, AttrValue> _inlineEvents;
+    private readonly IReadOnlyDictionary<string, string> _inlineMethods;
+    private readonly IReadOnlyDictionary<string, string> _methodNames;
+    private readonly StyleSelectorTransform? _styleSelectorTransform;
+    private readonly IReadOnlyDictionary<SourcePosition, InlineInvocationPlan> _inlineInvocationPlans;
     private static readonly HashSet<string> Globals = new(StringComparer.Ordinal) { "Math", "Date", "JSON", "Number", "String", "Boolean", "Array", "Object", "RegExp", "Promise", "Symbol", "Map", "Set", "WeakMap", "Error", "console", "setTimeout", "setInterval", "clearTimeout", "clearInterval", "parseInt", "parseFloat", "isNaN", "isFinite", "NaN", "Infinity", "undefined", "global", "require", "$app_require$", "$translateStyle$" };
     private static readonly HashSet<string> Reserved = new(StringComparer.Ordinal) { "true", "false", "null", "undefined", "NaN", "Infinity", "arguments" };
 
-    public TemplateTranslator(ConstantTable constTable, IEnumerable<string>? moduleBindings = null, string? templatePath = null, string? sourceRootPath = null, DiagnosticSink? diagnostics = null, IReadOnlyDictionary<string, InlineComponentDefinition>? inlineComponents = null, IReadOnlyDictionary<string, JsExpression>? inlineBindings = null, IReadOnlyDictionary<string, AttrValue>? inlineEvents = null)
+    public TemplateTranslator(ConstantTable constTable, IEnumerable<string>? moduleBindings = null, string? templatePath = null, string? sourceRootPath = null, DiagnosticSink? diagnostics = null, IReadOnlyDictionary<string, InlineComponentDefinition>? inlineComponents = null, IReadOnlyDictionary<string, JsExpression>? inlineBindings = null, IReadOnlyDictionary<string, AttrValue>? inlineEvents = null, StyleSelectorTransform? styleSelectorTransform = null, IReadOnlyDictionary<string, string>? inlineMethods = null, IReadOnlyDictionary<string, string>? methodNames = null, IReadOnlyDictionary<SourcePosition, InlineInvocationPlan>? inlineInvocationPlans = null)
     {
         _constTable = constTable;
         _moduleBindings = moduleBindings is null ? new HashSet<string>(StringComparer.Ordinal) : new HashSet<string>(moduleBindings, StringComparer.Ordinal);
@@ -32,52 +37,66 @@ public sealed class TemplateTranslator
         _inlineComponents = inlineComponents ?? new Dictionary<string, InlineComponentDefinition>(StringComparer.OrdinalIgnoreCase);
         _inlineBindings = inlineBindings ?? new Dictionary<string, JsExpression>(StringComparer.Ordinal);
         _inlineEvents = inlineEvents ?? new Dictionary<string, AttrValue>(StringComparer.Ordinal);
+        _inlineMethods = inlineMethods ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        _methodNames = methodNames ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        _styleSelectorTransform = styleSelectorTransform;
+        _inlineInvocationPlans = inlineInvocationPlans ?? new Dictionary<SourcePosition, InlineInvocationPlan>();
     }
 
-    public IReadOnlyList<JsExpression> TranslateAst(IReadOnlyList<UxNode> children, bool itemScope = false)
-        => children.SelectMany(node => TranslateNode(node, itemScope)).ToArray();
+    public IReadOnlyList<JsExpression> TranslateAst(IReadOnlyList<UxNode> children, bool itemScope = false, IReadOnlyList<string>? generatedClasses = null)
+        => TranslateIr(new ComponentRenderIrLowerer(_inlineComponents, _styleSelectorTransform, _inlineInvocationPlans).Lower(children, generatedClasses), itemScope);
 
-    private IReadOnlyList<JsExpression> TranslateNode(UxNode node, bool itemScope) => node switch
+    public IReadOnlyList<JsExpression> TranslateIr(ComponentRenderProgram program, bool itemScope = false)
+        => program.Nodes.SelectMany(node => TranslateNode(node, itemScope)).ToArray();
+
+    private IReadOnlyList<JsExpression> TranslateNode(ComponentRenderNode node, bool itemScope) => node switch
     {
-        UxElement element => [TranslateElement(element, itemScope)],
-        UxTextNode text => [TranslateText(text, itemScope)],
-        UxListNode list => [TranslateList(list, itemScope)],
-        UxIfChain chain => TranslateIfChain(chain, itemScope),
+        ComponentRenderElement element => [TranslateElement(element, itemScope)],
+        ComponentRenderText text => [TranslateText(text, itemScope)],
+        ComponentRenderList list => [TranslateList(list, itemScope)],
+        ComponentRenderIf chain => TranslateIfChain(chain, itemScope),
+        ComponentRenderInline inline => [TranslateInlineComponent(inline, itemScope)],
         _ => []
     };
 
-    private JsExpression TranslateElement(UxElement element, bool itemScope)
+    private JsExpression TranslateElement(ComponentRenderElement element, bool itemScope)
     {
-        if (element.IsComponent && _inlineComponents.TryGetValue(element.Tag, out var inline))
-            return TranslateInlineComponent(element, itemScope, inline);
-        var context = Object([Property("__vm__", Id("_vm_")), Property("__opts__", TranslateAttrs(element.Attrs, itemScope, element.IsComponent, element.Tag, element.IsStatic || element.IsConst))]);
-        var isDynamicComponent = element.Tag.Equals("component", StringComparison.OrdinalIgnoreCase)
+        var context = Object([Property("__vm__", Id("_vm_")), Property("__opts__", TranslateAttrs(element.Attrs, itemScope, element.IsComponent, element.SourceTag, element.IsStatic || element.IsConst, element.GeneratedClasses))]);
+        var isDynamicComponent = element.SourceTag.Equals("component", StringComparison.OrdinalIgnoreCase)
             && element.Attrs.Any(attribute => attribute.Name.Equals("is", StringComparison.OrdinalIgnoreCase) || attribute.Name.Equals("remotewidget", StringComparison.OrdinalIgnoreCase));
         var factory = element.IsComponent ? "__cc__" : isDynamicComponent ? "__cdc__" : "__ce__";
-        return Call(Member(Id("aiot"), factory), [String(element.IsComponent ? element.Tag : element.Tag.ToLowerInvariant()), context, Array(TranslateAst(element.Children, itemScope))]);
+        return Call(Member(Id("aiot"), factory), [String(element.RuntimeTag), context, Array(element.Children.SelectMany(child => TranslateNode(child, itemScope)).ToArray())]);
     }
 
-    private JsExpression TranslateInlineComponent(UxElement element, bool itemScope, InlineComponentDefinition inline)
+    private JsExpression TranslateInlineComponent(ComponentRenderInline inline, bool itemScope)
     {
         var bindings = new Dictionary<string, JsExpression>(StringComparer.Ordinal);
         var events = new Dictionary<string, AttrValue>(StringComparer.Ordinal);
-        foreach (var attribute in element.Attrs)
+        foreach (var attribute in inline.Invocation.Attrs)
         {
             if (attribute.Kind == AttrKind.Event) events[attribute.Name] = attribute.Value;
-            else bindings[attribute.Name] = AttrValueToExpression(attribute.Value, itemScope);
+            // Component property names are normalized at every non-inline call
+            // site (for example, `Item` becomes `item`).  Inline expansion
+            // must use the same key before resolving bindings inside the
+            // expanded template; otherwise `{Binding item}` falls through to
+            // the enclosing list scope as `$item.item`.
+            else bindings[ToCamelCase(attribute.Name)] = AttrValueToExpression(attribute.Value, itemScope);
         }
-        var translator = new TemplateTranslator(_constTable, _moduleBindings, inline.SourcePath, _sourceRootPath, _diagnostics, _inlineComponents, bindings, events);
-        var children = translator.TranslateAst(inline.Document.Children);
+        var methods = inline.Plan?.MethodNames ?? inline.Definition.MethodNames;
+        var translator = new TemplateTranslator(_constTable, _moduleBindings, inline.Definition.SourcePath, _sourceRootPath, _diagnostics, inline.Definition.InlineComponents, bindings, events, _styleSelectorTransform, methods, _methodNames, _inlineInvocationPlans);
+        var children = translator.TranslateAst(inline.Definition.Document.Children, itemScope, inline.GeneratedClasses);
         return children.Count == 1 ? children[0] : Array(children);
     }
 
-    private JsExpression TranslateText(UxTextNode text, bool itemScope)
+    private JsExpression TranslateText(ComponentRenderText text, bool itemScope)
     {
-        var context = Object([Property("__vm__", Id("_vm_")), Property("__opts__", Object([Property("value", AttributeValue(text.Value, itemScope))]))]);
+        var options = new List<JsObjectProperty> { Property("value", AttributeValue(text.Value, itemScope)) };
+        if (text.GeneratedClasses.Count > 0) options.Add(Property("classList", Array(text.GeneratedClasses.Select(String).ToArray())));
+        var context = Object([Property("__vm__", Id("_vm_")), Property("__opts__", Object(options))]);
         return Call(Member(Id("aiot"), "__ce__"), [String("span"), context, Array([])]);
     }
 
-    private JsExpression TranslateList(UxListNode list, bool itemScope)
+    private JsExpression TranslateList(ComponentRenderList list, bool itemScope)
     {
         var source = AttrValueToExpression(list.ItemsSource, itemScope);
         JsExpression exp = list.Key is null ? source : Function([], [new JsReturnStatement(Object([Property("__list__", source), Property("__tid__", String(list.Key))]), 0, 0)]);
@@ -86,7 +105,7 @@ public sealed class TemplateTranslator
         return Call(Member(Id("aiot"), "__cf__"), [context, Function(["$idx", "$item"], [new JsReturnStatement(Array(TranslateNode(list.ItemTemplateRoot, true)), 0, 0)])]);
     }
 
-    private IReadOnlyList<JsExpression> TranslateIfChain(UxIfChain chain, bool itemScope)
+    private IReadOnlyList<JsExpression> TranslateIfChain(ComponentRenderIf chain, bool itemScope)
     {
         var output = new List<JsExpression>();
         var previous = new List<JsExpression>();
@@ -105,13 +124,13 @@ public sealed class TemplateTranslator
             }
             var opts = Object([Property("shown", Function([], [new JsReturnStatement(shown, 0, 0)])), Property("modifiers", Decorators(branch.Modifiers, "shown"))]);
             var context = Object([Property("__vm__", Id("_vm_")), Property("__opts__", opts)]);
-            output.Add(Call(Member(Id("aiot"), "__ci__"), [context, Function([], [new JsReturnStatement(Array(TranslateAst(branch.Children, itemScope)), 0, 0)])]));
+            output.Add(Call(Member(Id("aiot"), "__ci__"), [context, Function([], [new JsReturnStatement(Array(branch.Children.SelectMany(child => TranslateNode(child, itemScope)).ToArray()), 0, 0)])]));
             if (terminal) break;
         }
         return output;
     }
 
-    private JsObjectExpression TranslateAttrs(IReadOnlyList<UxAttr> attrs, bool itemScope, bool isComponent, string? elementTag = null, bool isStatic = false)
+    private JsObjectExpression TranslateAttrs(IReadOnlyList<UxAttr> attrs, bool itemScope, bool isComponent, string? elementTag = null, bool isStatic = false, IReadOnlyList<string>? generatedClasses = null)
     {
         var properties = new List<JsObjectProperty>();
         var events = new List<JsObjectProperty>();
@@ -142,6 +161,14 @@ public sealed class TemplateTranslator
             if (attribute.Modifiers is { Count: > 0 })
                 modifiers.Add(Property(ToCamelCase(attribute.Name), Object(attribute.Modifiers.Select(modifier => Property(ToCamelCase(modifier), Bool(true))).ToArray())));
         }
+        if (generatedClasses is { Count: > 0 })
+        {
+            var existingClass = properties.FindIndex(property => property.Key == "classList");
+            if (existingClass >= 0)
+                properties[existingClass] = Property("classList", AppendClasses(properties[existingClass].Value, generatedClasses));
+            else
+                properties.Add(Property("classList", Array(generatedClasses.Select(String).ToArray())));
+        }
         if (events.Count > 0) properties.Add(Property("events", Object(events)));
         if (dataset.Count > 0) properties.Add(Property("dataset", Object(dataset)));
         if (isStatic) properties.Add(Property("static", Bool(true)));
@@ -152,6 +179,16 @@ public sealed class TemplateTranslator
         if (modifiers.Count > 0) properties.Add(Property("modifiers", Object(modifiers)));
         return Object(properties);
     }
+
+    private string? GeneratedClass(string tag) => _styleSelectorTransform?.GeneratedClassFor(tag);
+
+    private static IReadOnlyList<string> WithGeneratedClass(IReadOnlyList<string> classes, string? generatedClass)
+        => generatedClass is null || classes.Contains(generatedClass, StringComparer.Ordinal) ? classes : classes.Append(generatedClass).ToArray();
+
+    private static JsExpression AppendClasses(JsExpression classes, IReadOnlyList<string> generatedClasses)
+        => classes is JsArrayExpression array
+            ? new JsArrayExpression(array.Elements.Concat(generatedClasses.Select(String)).ToArray(), 0, 0)
+            : Function([], [new JsReturnStatement(Call(Member(Call(classes, []), "concat"), [Array(generatedClasses.Select(String).ToArray())]), 0, 0)]);
 
     private JsExpression ClassValue(AttrValue value, bool itemScope)
     {
@@ -308,6 +345,8 @@ public sealed class TemplateTranslator
         var name = identifier.Name;
         if (bound.Contains(name) || Reserved.Contains(name) || Globals.Contains(name)) return identifier;
         if (_inlineBindings.TryGetValue(name, out var replacement)) return replacement;
+        if (_inlineMethods.TryGetValue(name, out var inlineMethod)) return Member(Id("_vm_"), inlineMethod);
+        if (_methodNames.TryGetValue(name, out var methodName)) return Member(Id("_vm_"), methodName);
         if (_constTable.TryGet(name, out var constant)) return constant.IsFoldable ? Folded(constant.Folded) : identifier;
         if (_moduleBindings.Contains(name)) return identifier;
         return Member(itemScope ? Id("$item") : Id("_vm_"), name);

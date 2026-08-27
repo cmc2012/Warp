@@ -1,8 +1,14 @@
 namespace Warp.JsCompiler.Ir.Passes;
 
-internal interface IIrPass
+public interface IIrPass
 {
     void Run(IrModule module);
+}
+
+/// <summary>Extension point for transformations requiring visibility of every module in a resolved graph.</summary>
+public interface IModuleGraphPass
+{
+    void Run(IrModuleGraph graph);
 }
 
 internal sealed class IrPassManager(IEnumerable<IIrPass> passes)

@@ -31,6 +31,10 @@ var keepJavaScriptOption = new Option<bool>("--keep-javascript")
 {
     Description = "Keep generated JavaScript next to bytecode (diagnostics only)",
 };
+var noJscOption = new Option<bool>("--no-jsc")
+{
+    Description = "Skip JSC compilation and leave generated JavaScript for inspection",
+};
 
 var createCommand = new Command("create", "Create a new WXAML project from a template");
 var createDirectoryArgument = new Argument<string>("directory") { Description = "New project directory" };
@@ -78,19 +82,23 @@ buildCommand.Options.Add(projectOption);
 buildCommand.Options.Add(outputOption);
 buildCommand.Options.Add(verboseOption);
 buildCommand.Options.Add(keepJavaScriptOption);
+buildCommand.Options.Add(noJscOption);
 buildCommand.SetAction(async (parseResult, ct) =>
 {
     var project = parseResult.GetValue(projectOption)!;
     var output = parseResult.GetValue(outputOption)!;
     var verbose = parseResult.GetValue(verboseOption);
     var keepJavaScript = parseResult.GetValue(keepJavaScriptOption);
+    var noJsc = parseResult.GetValue(noJscOption);
     if (verbose) loggerFactory.CreateLogger("Warp").LogInformation("Verbose enabled");
 
     var opts = new BuildOptions(
         ProjectPath: Path.GetFullPath(project),
         OutputDir: output,
-        KeepJavaScript: keepJavaScript);
+        KeepJavaScript: keepJavaScript || noJsc,
+        CompileJavaScript: !noJsc);
 
+    Console.Error.WriteLine("Warning: Compilation accuracy cannot be guaranteed. If you encounter problems, contact contact@zephyr-apps.com.");
     logger.LogInformation("Warp build project={Project} output={Output}", opts.ProjectPath, opts.OutputDir);
     // BuildResult.Print is the CLI's single diagnostic renderer.  Passing the
     // console logger into the pipeline would render every diagnostic twice.
@@ -127,6 +135,8 @@ packCommand.SetAction(async (parseResult, ct) =>
         ProjectDirectory: projectPath,
         PrivateKeyPath: parseResult.GetValue(privateKeyOption),
         CertificatePath: parseResult.GetValue(certificateOption)), ct);
+    foreach (var diagnostic in sink.Diagnostics.Where(diagnostic => !diagnostic.IsError))
+        Console.Error.WriteLine(diagnostic);
     if (sink.HasErrors)
     {
         foreach (var diagnostic in sink.Diagnostics.Where(diagnostic => diagnostic.IsError))
@@ -156,7 +166,7 @@ diffCommand.Options.Add(projectOption);
 diffCommand.Options.Add(diffCurrentOption);
 diffCommand.Options.Add(diffPreviousOption);
 diffCommand.Options.Add(diffRpkOption);
-diffCommand.SetAction((parseResult, _) =>
+diffCommand.SetAction(async (parseResult, ct) =>
 {
     var project = Path.GetFullPath(parseResult.GetValue(projectOption)!);
     var current = ResolveProjectPath(project, parseResult.GetValue(diffCurrentOption)!);
@@ -166,14 +176,38 @@ diffCommand.SetAction((parseResult, _) =>
     if (!Directory.Exists(current))
     {
         Console.Error.WriteLine($"Current build directory does not exist: {current}");
-        return Task.FromResult(1);
+        return 1;
+    }
+
+    // AIoT development HMR builds with enableJsc=false. Such a JS-only build
+    // has no app.jsc and must not be routed through the full-package signer;
+    // its incremental archive is unzipped only to accompany HMR source.
+    if (File.Exists(Path.Combine(current, "app.jsc")))
+    {
+        var metadataArchive = Path.Combine(Path.GetTempPath(), $"warp-diff-metadata-{Guid.NewGuid():N}.rpk");
+        try
+        {
+            var sink = new DiagnosticSink();
+            var prepared = await new RpkPackager(sink).PackAsync(current, metadataArchive,
+                new RpkSigningOptions(ProjectDirectory: project), ct);
+            if (sink.HasErrors || string.IsNullOrWhiteSpace(prepared))
+            {
+                foreach (var diagnostic in sink.Diagnostics.Where(diagnostic => diagnostic.IsError))
+                    Console.Error.WriteLine(diagnostic);
+                return 1;
+            }
+        }
+        finally
+        {
+            if (File.Exists(metadataArchive)) File.Delete(metadataArchive);
+        }
     }
 
     var result = BuildDiff.CreateArchive(current, previous, rpk);
     Console.WriteLine(result.Archive is null
         ? "Diff: 0 changed"
         : $"Diff: {result.Changed} changed ({result.Archive})");
-    return Task.FromResult(0);
+    return 0;
 });
 
 var jsCompileCommand = new Command("js-compile", "Compile a JavaScript file to target bytecode");
@@ -218,7 +252,11 @@ jsCompileCommand.SetAction(async (parseResult, _) =>
     {
         var source = File.ReadAllText(inputPath);
         var fileName = Path.GetRelativePath(Directory.GetCurrentDirectory(), inputPath).Replace(Path.DirectorySeparatorChar, '/');
-        var compiler = new JavaScriptCompiler();
+        var compiler = new JavaScriptCompiler(new JavaScriptCompilerOptions
+        {
+            WarningSink = warning => Console.Error.WriteLine(
+                $"{warning.FileName}:{warning.Line}:{warning.Column}: warning {warning.Code}: {warning.Message}"),
+        });
         var parent = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
         if (!graph)

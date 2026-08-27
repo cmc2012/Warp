@@ -30,8 +30,13 @@ internal static class BytecodeTargetAbi
     public static bool HasTargetModulePrefix(string moduleName) =>
         moduleName.StartsWith(ModulePrefix, StringComparison.Ordinal);
 
-    public static string ToTargetModuleName(string moduleName) =>
-        HasTargetModulePrefix(moduleName)
-            ? moduleName
-            : ModulePrefix + Path.GetFileNameWithoutExtension(moduleName);
+    public static string ToTargetModuleName(string moduleName)
+    {
+        if (HasTargetModulePrefix(moduleName)) return moduleName;
+        var relative = Path.ChangeExtension(moduleName, null)
+            .Replace(Path.DirectorySeparatorChar, '/')
+            .Replace(Path.AltDirectorySeparatorChar, '/')
+            .TrimStart('/');
+        return ModulePrefix + relative;
+    }
 }

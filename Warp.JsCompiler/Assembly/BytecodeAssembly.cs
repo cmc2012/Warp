@@ -2,11 +2,11 @@ using Warp.JsCompiler.Encoding;
 
 namespace Warp.JsCompiler.Assembly;
 
-internal readonly record struct BytecodeAssemblyFunctionId(int Value);
-internal readonly record struct BytecodeAssemblyLabelId(int Value);
-internal readonly record struct BytecodeAssemblyConstantId(int Value);
+public readonly record struct BytecodeAssemblyFunctionId(int Value);
+public readonly record struct BytecodeAssemblyLabelId(int Value);
+public readonly record struct BytecodeAssemblyConstantId(int Value);
 
-internal enum BytecodeAssemblyAtomKind : byte
+public enum BytecodeAssemblyAtomKind : byte
 {
     Predefined,
     Symbol,
@@ -14,7 +14,7 @@ internal enum BytecodeAssemblyAtomKind : byte
 }
 
 /// <summary>An atom before object-stream atom table allocation.</summary>
-internal readonly record struct BytecodeAssemblyAtom
+public readonly record struct BytecodeAssemblyAtom
 {
     private BytecodeAssemblyAtom(BytecodeAssemblyAtomKind kind, uint predefinedId, string? symbol)
     {
@@ -23,69 +23,69 @@ internal readonly record struct BytecodeAssemblyAtom
         Symbol = symbol;
     }
 
-    internal BytecodeAssemblyAtomKind Kind { get; }
-    internal uint PredefinedId { get; }
-    internal string? Symbol { get; }
+    public BytecodeAssemblyAtomKind Kind { get; }
+    public uint PredefinedId { get; }
+    public string? Symbol { get; }
 
-    internal static BytecodeAssemblyAtom Predefined(uint id) => new(BytecodeAssemblyAtomKind.Predefined, id, null);
+    public static BytecodeAssemblyAtom Predefined(uint id) => new(BytecodeAssemblyAtomKind.Predefined, id, null);
 
-    internal static BytecodeAssemblyAtom TaggedInteger(uint value) =>
+    public static BytecodeAssemblyAtom TaggedInteger(uint value) =>
         new(BytecodeAssemblyAtomKind.TaggedInteger, value, null);
 
-    internal static BytecodeAssemblyAtom Named(string symbol)
+    public static BytecodeAssemblyAtom Named(string symbol)
     {
         ArgumentException.ThrowIfNullOrEmpty(symbol);
         return new BytecodeAssemblyAtom(BytecodeAssemblyAtomKind.Symbol, 0, symbol);
     }
 }
 
-internal readonly record struct BytecodeAssemblySourceLocation(int Line, int Column)
+public readonly record struct BytecodeAssemblySourceLocation(int Line, int Column)
 {
-    internal static readonly BytecodeAssemblySourceLocation None = new(0, 0);
+    public static readonly BytecodeAssemblySourceLocation None = new(0, 0);
 }
 
-internal abstract record BytecodeAssemblyOperand;
-internal sealed record BytecodeAssemblySignedOperand(long Value) : BytecodeAssemblyOperand;
-internal sealed record BytecodeAssemblyUnsignedOperand(ulong Value) : BytecodeAssemblyOperand;
+public abstract record BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblySignedOperand(long Value) : BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblyUnsignedOperand(ulong Value) : BytecodeAssemblyOperand;
 /// <summary>OP_eval carries both its argument count and the active lexical scope.</summary>
-internal sealed record BytecodeAssemblyEvalOperand(ushort ArgumentCount, ushort ScopeIndex) : BytecodeAssemblyOperand;
-internal sealed record BytecodeAssemblyLocalOperand(ushort Index) : BytecodeAssemblyOperand;
-internal sealed record BytecodeAssemblyArgumentOperand(ushort Index, bool ForceCanonical = false) : BytecodeAssemblyOperand;
-internal sealed record BytecodeAssemblyVarReferenceOperand(ushort Index) : BytecodeAssemblyOperand;
-internal sealed record BytecodeAssemblyConstantOperand(BytecodeAssemblyConstantId Constant) : BytecodeAssemblyOperand;
-internal sealed record BytecodeAssemblyLabelOperand(BytecodeAssemblyLabelId Label) : BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblyEvalOperand(ushort ArgumentCount, ushort ScopeIndex) : BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblyLocalOperand(ushort Index) : BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblyArgumentOperand(ushort Index, bool ForceCanonical = false) : BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblyVarReferenceOperand(ushort Index) : BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblyConstantOperand(BytecodeAssemblyConstantId Constant) : BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblyLabelOperand(BytecodeAssemblyLabelId Label) : BytecodeAssemblyOperand;
 
 /// <summary>
 /// Placeholder for an atom-bearing opcode. The atom itself is held by the
 /// corresponding relocation so instruction layout remains atom-table agnostic.
 /// </summary>
-internal abstract record BytecodeAssemblyAtomOperand : BytecodeAssemblyOperand;
-internal sealed record BytecodeAssemblyAtomReferenceOperand(ushort Flags = 0) : BytecodeAssemblyAtomOperand;
-internal sealed record BytecodeAssemblyAtomLabelOperand(BytecodeAssemblyLabelId Label, byte Flags = 0)
+public abstract record BytecodeAssemblyAtomOperand : BytecodeAssemblyOperand;
+public sealed record BytecodeAssemblyAtomReferenceOperand(ushort Flags = 0) : BytecodeAssemblyAtomOperand;
+public sealed record BytecodeAssemblyAtomLabelOperand(BytecodeAssemblyLabelId Label, byte Flags = 0)
     : BytecodeAssemblyAtomOperand;
 
-internal sealed record BytecodeAssemblyInstruction(
+public sealed record BytecodeAssemblyInstruction(
     TargetOpcodeDescriptor Opcode,
     BytecodeAssemblyOperand? Operand = null,
     BytecodeAssemblySourceLocation Location = default,
     bool PreserveAfterResolution = false);
 
 /// <summary>An atom use anchored to a stable instruction, not a byte offset.</summary>
-internal sealed record BytecodeAssemblyAtomRelocation(
+public sealed record BytecodeAssemblyAtomRelocation(
     int InstructionIndex,
     BytecodeAssemblyAtom Atom);
 
-internal abstract record BytecodeAssemblyConstant(BytecodeAssemblyConstantId Id);
-internal sealed record BytecodeAssemblyNumberConstant(BytecodeAssemblyConstantId Id, double Value) : BytecodeAssemblyConstant(Id);
-internal sealed record BytecodeAssemblyStringConstant(BytecodeAssemblyConstantId Id, string Value) : BytecodeAssemblyConstant(Id);
-internal sealed record BytecodeAssemblyRegExpPatternConstant(BytecodeAssemblyConstantId Id, string Value) : BytecodeAssemblyConstant(Id);
-internal sealed record BytecodeAssemblyRegExpBytecodeConstant(BytecodeAssemblyConstantId Id, string Bytes) : BytecodeAssemblyConstant(Id);
-internal sealed record BytecodeAssemblyFunctionConstant(BytecodeAssemblyConstantId Id, BytecodeAssemblyFunctionId Function)
+public abstract record BytecodeAssemblyConstant(BytecodeAssemblyConstantId Id);
+public sealed record BytecodeAssemblyNumberConstant(BytecodeAssemblyConstantId Id, double Value) : BytecodeAssemblyConstant(Id);
+public sealed record BytecodeAssemblyStringConstant(BytecodeAssemblyConstantId Id, string Value) : BytecodeAssemblyConstant(Id);
+public sealed record BytecodeAssemblyRegExpPatternConstant(BytecodeAssemblyConstantId Id, string Value) : BytecodeAssemblyConstant(Id);
+public sealed record BytecodeAssemblyRegExpBytecodeConstant(BytecodeAssemblyConstantId Id, string Bytes) : BytecodeAssemblyConstant(Id);
+public sealed record BytecodeAssemblyFunctionConstant(BytecodeAssemblyConstantId Id, BytecodeAssemblyFunctionId Function)
     : BytecodeAssemblyConstant(Id);
-internal sealed record BytecodeAssemblyTemplateConstant(BytecodeAssemblyConstantId Id,
+public sealed record BytecodeAssemblyTemplateConstant(BytecodeAssemblyConstantId Id,
     IReadOnlyList<string> Cooked, IReadOnlyList<string> Raw) : BytecodeAssemblyConstant(Id);
 
-internal enum BytecodeAssemblyVariableKind : byte
+public enum BytecodeAssemblyVariableKind : byte
 {
     Normal,
     FunctionDeclaration,
@@ -99,12 +99,12 @@ internal enum BytecodeAssemblyVariableKind : byte
     PrivateGetterSetter,
 }
 
-internal enum BytecodeAssemblyFunctionKind : byte { Normal, Generator, Async, AsyncGenerator }
+public enum BytecodeAssemblyFunctionKind : byte { Normal, Generator, Async, AsyncGenerator }
 
-internal sealed record BytecodeAssemblyDebugInfo(BytecodeAssemblyAtom FileName, uint LineNumber,
+public sealed record BytecodeAssemblyDebugInfo(BytecodeAssemblyAtom FileName, uint LineNumber,
     IReadOnlyList<byte> PcToLine);
 
-internal sealed record BytecodeAssemblyLocal(
+public sealed record BytecodeAssemblyLocal(
     BytecodeAssemblyAtom? Name,
     BytecodeAssemblyVariableKind Kind = BytecodeAssemblyVariableKind.Normal,
     bool IsConst = false,
@@ -113,7 +113,7 @@ internal sealed record BytecodeAssemblyLocal(
     uint ScopeLevel = 0,
     int ScopeNext = -1);
 
-internal sealed record BytecodeAssemblyClosure(
+public sealed record BytecodeAssemblyClosure(
     BytecodeAssemblyAtom Name,
     uint ParentIndex,
     BytecodeAssemblyVariableKind Kind = BytecodeAssemblyVariableKind.Normal,
@@ -123,7 +123,7 @@ internal sealed record BytecodeAssemblyClosure(
     bool IsLexical = false);
 
 /// <summary>Function flags and slot tables needed after opcode lowering.</summary>
-internal sealed record BytecodeAssemblyFunctionMetadata(
+public sealed record BytecodeAssemblyFunctionMetadata(
     ushort ArgumentCount = 0,
     ushort DefinedArgumentCount = 0,
     ushort MaximumStackSize = 1,
@@ -143,7 +143,7 @@ internal sealed record BytecodeAssemblyFunctionMetadata(
     bool SerializeVariableDefinitions = true,
     ushort? VariableCount = null);
 
-internal sealed record BytecodeAssemblyFunction(
+public sealed record BytecodeAssemblyFunction(
     BytecodeAssemblyFunctionId Id,
     BytecodeAssemblyAtom Name,
     IReadOnlyList<BytecodeAssemblyInstruction> Instructions,
@@ -151,29 +151,29 @@ internal sealed record BytecodeAssemblyFunction(
     IReadOnlyList<BytecodeAssemblyConstant>? Constants = null,
     IReadOnlyList<BytecodeAssemblyAtomRelocation>? AtomRelocations = null);
 
-internal abstract record BytecodeAssemblyExport(BytecodeAssemblyAtom ExportName);
-internal sealed record BytecodeAssemblyLocalExport(uint VariableIndex, BytecodeAssemblyAtom Name)
+public abstract record BytecodeAssemblyExport(BytecodeAssemblyAtom ExportName);
+public sealed record BytecodeAssemblyLocalExport(uint VariableIndex, BytecodeAssemblyAtom Name)
     : BytecodeAssemblyExport(Name);
-internal sealed record BytecodeAssemblyIndirectExport(uint RequiredModuleIndex, BytecodeAssemblyAtom LocalName,
+public sealed record BytecodeAssemblyIndirectExport(uint RequiredModuleIndex, BytecodeAssemblyAtom LocalName,
     BytecodeAssemblyAtom Name) : BytecodeAssemblyExport(Name);
-internal readonly record struct BytecodeAssemblyStarExport(uint RequiredModuleIndex);
-internal sealed record BytecodeAssemblyImport(uint VariableIndex, BytecodeAssemblyAtom ImportName, uint RequiredModuleIndex);
-internal sealed record BytecodeAssemblyModuleMetadata(
+public readonly record struct BytecodeAssemblyStarExport(uint RequiredModuleIndex);
+public sealed record BytecodeAssemblyImport(uint VariableIndex, BytecodeAssemblyAtom ImportName, uint RequiredModuleIndex);
+public sealed record BytecodeAssemblyModuleMetadata(
     BytecodeAssemblyAtom Name,
     IReadOnlyList<BytecodeAssemblyAtom>? RequiredModules = null,
     IReadOnlyList<BytecodeAssemblyExport>? Exports = null,
     IReadOnlyList<BytecodeAssemblyStarExport>? StarExports = null,
     IReadOnlyList<BytecodeAssemblyImport>? Imports = null);
 
-internal sealed record BytecodeAssemblyProgram(
+public sealed record BytecodeAssemblyProgram(
     BytecodeAssemblyFunctionId Entry,
     IReadOnlyList<BytecodeAssemblyFunction> Functions,
     BytecodeAssemblyModuleMetadata? Module = null);
 
 /// <summary>Structural checks at the assembly/object-writer boundary.</summary>
-internal static class BytecodeAssemblyVerifier
+public static class BytecodeAssemblyVerifier
 {
-    internal static void Verify(BytecodeAssemblyProgram program)
+    public static void Verify(BytecodeAssemblyProgram program)
     {
         ArgumentNullException.ThrowIfNull(program);
         ArgumentNullException.ThrowIfNull(program.Functions);
@@ -184,7 +184,7 @@ internal static class BytecodeAssemblyVerifier
         if (program.Module is { } module) VerifyModule(module);
     }
 
-    internal static void Verify(BytecodeAssemblyFunction function)
+    public static void Verify(BytecodeAssemblyFunction function)
     {
         ArgumentNullException.ThrowIfNull(function);
         Verify(function, new Dictionary<BytecodeAssemblyFunctionId, BytecodeAssemblyFunction> { [function.Id] = function },

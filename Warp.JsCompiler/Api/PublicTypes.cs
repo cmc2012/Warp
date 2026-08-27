@@ -19,6 +19,9 @@ public sealed record JavaScriptCompilationRequest(string Source, string FileName
     /// </summary>
     public bool StripDebugInfo { get; init; } = true;
 
+    /// <summary>Shorten function-local binding names after parsing and before bytecode slot resolution.</summary>
+    public bool MinifyLocalBindings { get; init; }
+
     public void Validate()
     {
         ArgumentNullException.ThrowIfNull(Source);
@@ -42,6 +45,25 @@ public sealed class JavaScriptBytecode
     public JavaScriptSourceKind Kind { get; }
 }
 
+/// <summary>Configures a <see cref="JavaScriptCompiler"/> instance.</summary>
+public sealed class JavaScriptCompilerOptions
+{
+    /// <summary>
+    /// Paths to DLLs containing public <c>IIrPass</c>, <c>IModuleGraphPass</c>, and/or <c>IBytecodeAssemblyPass</c>
+    /// implementations. Every eligible type in each assembly is instantiated and registered.
+    /// </summary>
+    public IList<string> ExternalPassAssemblyPaths { get; } = new List<string>();
+
+    /// <summary>
+    /// Receives non-fatal diagnostics produced while compiling a module graph.
+    /// Warnings are also available from <see cref="JavaScriptModuleGraph.Warnings"/>.
+    /// </summary>
+    public Action<JavaScriptCompilerWarning>? WarningSink { get; init; }
+}
+
+/// <summary>A non-fatal, location-aware compiler diagnostic.</summary>
+public sealed record JavaScriptCompilerWarning(string Message, string FileName, int Line, int Column, string Code);
+
 /// <summary>Resolved source returned by a module resolver.</summary>
 public sealed record JavaScriptModuleSource(string CanonicalName, string Source, bool IsExternal = false);
 
@@ -54,10 +76,16 @@ public interface IJavaScriptModuleResolver
 /// <summary>Dependency-first output of an ES module compilation.</summary>
 public sealed class JavaScriptModuleGraph
 {
-    internal JavaScriptModuleGraph(IReadOnlyDictionary<string, JavaScriptBytecode> modules)
-        => Modules = new ReadOnlyDictionary<string, JavaScriptBytecode>(new Dictionary<string, JavaScriptBytecode>(modules, StringComparer.Ordinal));
+    internal JavaScriptModuleGraph(IReadOnlyDictionary<string, JavaScriptBytecode> modules,
+        IReadOnlyList<JavaScriptCompilerWarning> warnings)
+    {
+        Modules = new ReadOnlyDictionary<string, JavaScriptBytecode>(new Dictionary<string, JavaScriptBytecode>(modules, StringComparer.Ordinal));
+        Warnings = Array.AsReadOnly(warnings.ToArray());
+    }
 
     public IReadOnlyDictionary<string, JavaScriptBytecode> Modules { get; }
+    /// <summary>Non-fatal diagnostics emitted while this module graph was compiled.</summary>
+    public IReadOnlyList<JavaScriptCompilerWarning> Warnings { get; }
 }
 
 /// <summary>Location-aware ECMAScript compile failure.</summary>

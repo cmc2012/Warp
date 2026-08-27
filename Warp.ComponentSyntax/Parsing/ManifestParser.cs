@@ -51,9 +51,19 @@ public sealed class ManifestParser
 
             var config = new ManifestConfig("log", "device-width");
             if (root.TryGetValue("config", out var rawConfig) && rawConfig is Dictionary<object, object?> configMap)
+            {
+                var minifyIdentifiers = true;
+                if (configMap.TryGetValue("minifyIdentifiers", out var rawMinifyIdentifiers) &&
+                    !bool.TryParse(rawMinifyIdentifiers?.ToString(), out minifyIdentifiers))
+                {
+                    sink.Warning("manifest: config.minifyIdentifiers must be true or false; defaulting to true");
+                    minifyIdentifiers = true;
+                }
                 config = new ManifestConfig(
                     configMap.TryGetValue("logLevel", out var logLevel) ? logLevel?.ToString() ?? "log" : "log",
-                    configMap.TryGetValue("designWidth", out var designWidth) ? designWidth?.ToString() ?? "device-width" : "device-width");
+                    configMap.TryGetValue("designWidth", out var designWidth) ? designWidth?.ToString() ?? "device-width" : "device-width",
+                    minifyIdentifiers);
+            }
 
             var router = new ManifestRouter("pages/index", new Dictionary<string, ManifestPage>());
             if (root.TryGetValue("router", out var rawRouter) && rawRouter is Dictionary<object, object?> routerMap)

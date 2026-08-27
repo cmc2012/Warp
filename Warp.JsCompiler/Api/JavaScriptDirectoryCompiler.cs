@@ -8,6 +8,7 @@ public sealed record JavaScriptDirectoryCompilationRequest(string SourceDirector
 
     /// <summary>Use the target driver's raw, stripped module-output mode.</summary>
     public bool CompileAsModules { get; init; } = true;
+    public bool MinifyLocalBindings { get; init; }
 }
 
 /// <summary>Compiles a source directory to a matching tree of raw <c>.jsc</c> files.</summary>
@@ -38,7 +39,7 @@ public sealed class JavaScriptDirectoryCompiler
             var relative = Path.GetRelativePath(sourceRoot, path);
             var outputPath = Path.ChangeExtension(Path.Combine(outputRoot, relative), ".jsc");
             var kind = request.CompileAsModules ? JavaScriptSourceKind.Module : JavaScriptSourceKind.Auto;
-            var bytecode = _compiler.Compile(new JavaScriptCompilationRequest(source, relative, kind));
+            var bytecode = _compiler.Compile(new JavaScriptCompilationRequest(source, relative, kind) { MinifyLocalBindings = request.MinifyLocalBindings });
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             await File.WriteAllBytesAsync(outputPath, bytecode.Bytes.ToArray(), cancellationToken).ConfigureAwait(false);
             outputPaths.Add(outputPath);

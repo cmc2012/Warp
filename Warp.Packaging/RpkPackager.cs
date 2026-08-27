@@ -28,10 +28,19 @@ public sealed class RpkPackager
             _sink.Error($"build dir not found: {buildDir}");
             return "";
         }
-        if (!File.Exists(Path.Combine(buildDir, "app.jsc")))
+        var hasBytecodeEntry = File.Exists(Path.Combine(buildDir, "app.jsc"));
+        var hasJavaScriptEntry = File.Exists(Path.Combine(buildDir, "app.js"));
+        // AIoT debug builds set enableJsc=false so that HMR can replace the
+        // JavaScript sources at runtime.  A deployable package therefore needs
+        // an app entry in either supported representation, not specifically JSC.
+        if (!hasBytecodeEntry && !hasJavaScriptEntry)
         {
-            _sink.Error($"build output has no app.jsc: {Path.Combine(buildDir, "app.jsc")}. Run 'warp build --output {Path.GetFileName(buildDir)}' before packing.");
+            _sink.Error($"build output has no app entry (app.jsc or app.js) in {buildDir}. Run 'warp build --output {Path.GetFileName(buildDir)}' before packing.");
             return "";
+        }
+        if (!hasBytecodeEntry)
+        {
+            _sink.Warning("Packaging JavaScript without JSC bytecode: the package can be modified more easily.");
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outputRpk) ?? ".");
@@ -55,8 +64,11 @@ public sealed class RpkPackager
             return "";
         }
 
-        // The toolkit always records the build metadata and hashes every non-CERT entry.
-        contents.Add(new RpkFile("META-INF/build.txt", buildMetadata.ToBuildInfo()));
+        // The toolkit writes build metadata to the build directory, but does
+        // not include META-INF in the digest stored in CERT.  The directory is
+        // also the source for a hot-reload diff, so it must have the same
+        // layout as aiotpack's build output.
+        var buildInfo = buildMetadata.ToBuildInfo();
         var entryPage = ReadEntryPage(contents);
         contents = OrderFiles(contents, entryPage).ToList();
         var digestDocument = JsonSerializer.SerializeToUtf8Bytes(new
@@ -74,10 +86,26 @@ public sealed class RpkPackager
             var signedCert = RpkSignature.Sign(certZip,
                 [new FileDigest("hash.json", SHA256.HashData(certZip))], signingMaterial.Key, signingMaterial.Certificate);
 
+            var metadataDirectory = Path.Combine(buildDir, MetaDirectory);
+            Directory.CreateDirectory(metadataDirectory);
+            await File.WriteAllBytesAsync(Path.Combine(metadataDirectory, "build.txt"), buildInfo, ct);
+            // aiotpack leaves this unsigned digest ZIP in build/.  Its full
+            // package gets a signed copy, while a .diff.rpk directly unzips
+            // this build-directory version onto the device.
+            await File.WriteAllBytesAsync(Path.Combine(metadataDirectory, "CERT"), certZip, ct);
+
+            contents.Add(new RpkFile("META-INF/build.txt", buildInfo));
+            // The toolkit keeps directory entries in the ZIP, but signs only
+            // real files.  Including generated directories in the signature
+            // list makes the device reject the package before it extracts
+            // manifest.json; omitting them from the ZIP itself is incompatible
+            // with the target's unpacker.
             var packageFiles = ExpandDirectories(OrderFiles([new RpkFile(CertificatePath, signedCert), .. contents], entryPage)).ToList();
             var packageZip = await CreateZipAsync(packageFiles, comment, ct);
             var signedPackage = RpkSignature.Sign(packageZip,
-                packageFiles.Select(x => new FileDigest(x.Path, SHA256.HashData(x.Content))).ToArray(), signingMaterial.Key, signingMaterial.Certificate);
+                packageFiles.Where(x => !x.Path.EndsWith("/", StringComparison.Ordinal))
+                    .Select(x => new FileDigest(x.Path, SHA256.HashData(x.Content))).ToArray(),
+                signingMaterial.Key, signingMaterial.Certificate);
 
             await File.WriteAllBytesAsync(outputRpk, signedPackage, ct);
             _sink.Info("I-PACK-001", $"packed {buildDir} -> {outputRpk} ({signedPackage.Length} bytes, {contents.Count} files, signed=true)");

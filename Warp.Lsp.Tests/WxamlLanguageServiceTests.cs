@@ -21,7 +21,7 @@ public sealed class WxamlLanguageServiceTests
     public void Accepts_resource_dictionary_as_a_valid_wxaml_style_resource()
     {
         var diagnostics = _service.GetDiagnostics("file:///workspace/styles/common.wxaml",
-            "<ResourceDictionary><Style Selector=\".card\"><Setter Property=\"padding\" Value=\"4px\" /></Style></ResourceDictionary>");
+            "<ResourceDictionary><Style Class=\"card\"><Setter Property=\"padding\" Value=\"4px\" /></Style></ResourceDictionary>");
 
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Message.Contains("root element", StringComparison.OrdinalIgnoreCase));
     }
@@ -130,7 +130,7 @@ public sealed class WxamlLanguageServiceTests
     [Fact]
     public void Navigates_between_style_selectors_and_class_uses()
     {
-        const string source = "<Page><Page.Styles><Style Selector=\".card\" /></Page.Styles><Stack Class=\"card\" /></Page>";
+        const string source = "<Page><Page.Styles><Style Class=\"card\" /></Page.Styles><Stack Class=\"card\" /></Page>";
         var selector = source.IndexOf("card\"", StringComparison.Ordinal);
         var classUse = source.LastIndexOf("card\"", StringComparison.Ordinal);
 
@@ -144,7 +144,7 @@ public sealed class WxamlLanguageServiceTests
     [Fact]
     public void Finds_all_class_usages_for_a_selector()
     {
-        const string source = "<Page><Page.Styles><Style Selector=\".card\" /></Page.Styles><Stack Class=\"card\" /><Text Class=\"card\" /></Page>";
+        const string source = "<Page><Page.Styles><Style Class=\"card\" /></Page.Styles><Stack Class=\"card\" /><Text Class=\"card\" /></Page>";
         var selector = source.IndexOf("card\"", StringComparison.Ordinal);
 
         var references = _service.GetReferences("file:///workspace/home.wxaml", source, new LspPosition(0, selector + 1));
@@ -156,17 +156,17 @@ public sealed class WxamlLanguageServiceTests
     [Fact]
     public void Explains_style_references_on_hover()
     {
-        const string source = "<Style Selector=\".card\" />";
+        const string source = "<Style Class=\"card\" />";
         var hover = _service.GetHover(source, new LspPosition(0, source.IndexOf("card", StringComparison.Ordinal) + 1));
 
         Assert.Contains("style selector", hover, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(".card", hover, StringComparison.Ordinal);
+        Assert.Contains("Class=card", hover, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Reports_the_precise_origin_range_for_style_navigation()
     {
-        const string source = "<Style Selector=\".card\" />";
+        const string source = "<Style Class=\"card\" />";
         var origin = _service.GetNavigationOrigin(source, new LspPosition(0, source.IndexOf("card", StringComparison.Ordinal) + 1));
 
         Assert.Equal(source.IndexOf("card", StringComparison.Ordinal), origin!.Start.Character);

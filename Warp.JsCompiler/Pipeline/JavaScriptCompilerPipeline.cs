@@ -1,6 +1,7 @@
 using Warp.JsCompiler.Assembly.Passes;
 using Warp.JsCompiler.Frontend;
 using Warp.JsCompiler.Ir;
+using Warp.JsCompiler.Ir.Passes;
 
 namespace Warp.JsCompiler.Pipeline;
 
@@ -11,10 +12,20 @@ namespace Warp.JsCompiler.Pipeline;
 /// </summary>
 internal static class JavaScriptCompilerPipeline
 {
-    internal static byte[] Compile(JavaScriptProgram program, bool stripDebugInfo)
+    internal static byte[] Compile(JavaScriptProgram program, bool stripDebugInfo, bool minifyLocalBindings,
+        IEnumerable<IIrPass>? externalIrPasses = null,
+        IEnumerable<IBytecodeAssemblyPass>? externalAssemblyPasses = null)
     {
         ArgumentNullException.ThrowIfNull(program);
 
+        var unresolved = new ProgramIrLowerer().Run(program);
+        return CompileIr(program, unresolved, stripDebugInfo, minifyLocalBindings, externalIrPasses, externalAssemblyPasses);
+    }
+
+    internal static byte[] CompileIr(JavaScriptProgram program, IrModule unresolved, bool stripDebugInfo, bool minifyLocalBindings,
+        IEnumerable<IIrPass>? externalIrPasses = null,
+        IEnumerable<IBytecodeAssemblyPass>? externalAssemblyPasses = null)
+    {
         // Module grammar is strict.  Keep the validation in the production
         // pipeline (rather than the reusable front-end parser) so tools that
         // parse solely to discover module imports can still invoke the
@@ -22,8 +33,7 @@ internal static class JavaScriptCompilerPipeline
         if (program.Kind == Api.JavaScriptSourceKind.Module)
             new JavaScriptStrictBindingValidator(program.FileName).ValidateModule(program.Ast);
 
-        var unresolved = new ProgramIrLowerer().Run(program);
-        var passes = ProductionPassFactory.Create(program, stripDebugInfo);
+        var passes = ProductionPassFactory.Create(program, stripDebugInfo, minifyLocalBindings, externalIrPasses, externalAssemblyPasses);
         CompilerPassPipeline.RunIrPasses(unresolved, passes);
         return BytecodeEmissionPass.Run(unresolved, passes);
     }

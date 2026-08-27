@@ -4,25 +4,26 @@ namespace Warp.ComponentCompiler.Translation;
 
 public static class StyleTranslator
 {
-    public static JsExpression Translate(UxStyleSheet? sheet)
+    public static JsExpression Translate(UxStyleSheet? sheet, StyleSelectorTransform? selectorTransform = null)
     {
-        if (sheet is null || sheet.Rules.Count == 0) return Array([]);
+        if (sheet is null || (sheet.Rules.Count == 0 && (sheet.MediaRules is null || sheet.MediaRules.Count == 0))) return Array([]);
+        selectorTransform ??= StyleSelectorTransform.Create(sheet);
 
         var rules = new List<JsExpression>();
         foreach (var rule in sheet.Rules)
-            rules.Add(TranslateRule(rule));
+            rules.Add(TranslateRule(rule, selectorTransform));
         foreach (var media in sheet.MediaRules ?? [])
             foreach (var rule in media.Rules)
             {
-                var translated = TranslateRule(rule);
+                var translated = TranslateRule(rule, selectorTransform);
                 rules.Add(Array([Object([Property("condition", String(media.Condition))]), translated.Elements[0]!, translated.Elements[1]!]));
             }
         return Array(rules);
     }
 
-    private static JsArrayExpression TranslateRule(UxStyleRule rule)
+    private static JsArrayExpression TranslateRule(UxStyleRule rule, StyleSelectorTransform selectorTransform)
     {
-        var selectors = Array(rule.Selectors.Select(selector => Array([Number((int)selector.Kind), String(selector.Name)])).ToArray());
+        var selectors = Array(rule.Selectors.Select(selector => selectorTransform.Transform(selector)).Select(selector => Array([Number((int)selector.Kind), String(selector.Name)])).ToArray());
         var declarations = Object(rule.Declarations.Select(declaration => Property(declaration.Property, Value(declaration.Value))).ToArray());
         return Array([selectors, declarations]);
     }

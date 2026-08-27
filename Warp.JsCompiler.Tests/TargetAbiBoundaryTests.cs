@@ -29,7 +29,7 @@ public sealed class TargetAbiBoundaryTests
 
     [Theory]
     [InlineData("module.js", "@aiot/module")]
-    [InlineData("path/to/module.mjs", "@aiot/module")]
+    [InlineData("path/to/module.mjs", "@aiot/path/to/module")]
     [InlineData("without-extension", "@aiot/without-extension")]
     [InlineData("@aiot/already", "@aiot/already")]
     public void Target_module_name_normalizes_input(string input, string expected)

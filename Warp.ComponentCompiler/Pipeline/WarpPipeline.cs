@@ -23,6 +23,7 @@ public sealed class WarpPipeline
     private readonly ILogger _logger;
     private readonly HashSet<string> _builtComponents = new(StringComparer.OrdinalIgnoreCase);
     private bool _minifyIdentifiers = true;
+    private IReadOnlyList<string> _externalPassAssemblyPaths = [];
 
     public WarpPipeline(BuildOptions opts, ILogger? logger = null)
     {
@@ -45,6 +46,9 @@ public sealed class WarpPipeline
             var text = await File.ReadAllTextAsync(manifestPath, ct);
             manifest = new ManifestParser().Parse(text, manifestPath, _sink);
             _minifyIdentifiers = manifest.Config.MinifyIdentifiers;
+            _externalPassAssemblyPaths = (manifest.Config.Passes ?? [])
+                .Select(path => Path.GetFullPath(Path.Combine(_opts.ProjectPath, path)))
+                .ToArray();
         }
         else
         {
@@ -369,7 +373,10 @@ public sealed class WarpPipeline
         var outputRoot = Path.Combine(_opts.ProjectPath, _opts.OutputDir);
         try
         {
-            var bytecode = await new JavaScriptDirectoryCompiler().CompileAsync(
+            var compilerOptions = new JavaScriptCompilerOptions();
+            foreach (var passPath in _externalPassAssemblyPaths)
+                compilerOptions.ExternalPassAssemblyPaths.Add(passPath);
+            var bytecode = await new JavaScriptDirectoryCompiler(new JavaScriptCompiler(compilerOptions)).CompileAsync(
                 new JavaScriptDirectoryCompilationRequest(outputRoot, outputRoot)
                 {
                     // Match the target compiler's `-m -s` invocation: every

@@ -263,7 +263,8 @@ internal sealed partial class IrToBytecodeAssemblyLowerer : IIrToAssemblyLowerin
             ArgumentsAllowed: source.Options.ArgumentsAllowed,
             Locals: locals, Closures: closures,
             SerializeVariableDefinitions: source.Options.Form != IrFunctionForm.Script,
-            VariableCount: source.Options.Form == IrFunctionForm.Script ? (ushort)1 : null);
+            VariableCount: source.Options.Form == IrFunctionForm.Script ? (ushort)1 : null,
+            ProtectionTags: source.ProtectionTags);
         return new BytecodeAssemblyFunction(new BytecodeAssemblyFunctionId(source.Id.Value),
             source.Name is { Length: > 0 } name ? Atom(name) :
             source.Options.Form is IrFunctionForm.Module or IrFunctionForm.Script
@@ -791,6 +792,12 @@ internal sealed partial class IrToBytecodeAssemblyLowerer : IIrToAssemblyLowerin
             case "scope_make_ref":
             {
                 var (name, scope) = Symbol(instruction);
+                // A persistent reference belongs only to the immediately
+                // preceding destructuring/reference sequence.  A normal
+                // lvalue starts a fresh protocol; retaining this flag makes
+                // a later optimized global update emit put_ref_value even
+                // though no reference record remains on the operand stack.
+                state.PendingPersistentReference = false;
                 if (ResolveAccess(state, name, scope) is { } access)
                 {
                     state.PendingReference = access;
@@ -876,7 +883,12 @@ internal sealed partial class IrToBytecodeAssemblyLowerer : IIrToAssemblyLowerin
             case "put_ref_value_copy":
                 if (state.PendingReference is { } copied) EmitAccess(state, "put", copied, location);
                 else if (state.PendingPersistentReference || state.PendingGlobalReference)
-                    Add(state, "put_ref_value", null, location);
+                {
+                    if (state.PendingOptimizedGlobalReference)
+                        AddAtom(state, state.Source.Options.Strict ? "put_var_strict" : "put_var",
+                            state.PendingGlobalName ?? throw new InvalidOperationException("Global reference lost its name."), location);
+                    else Add(state, "put_ref_value", null, location);
+                }
                 else throw new InvalidOperationException("put_ref_value_copy has no pending reference.");
                 state.PendingReference = null;
                 state.PendingGlobalReference = false;

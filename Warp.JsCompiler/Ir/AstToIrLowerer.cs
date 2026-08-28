@@ -64,7 +64,7 @@ internal sealed class AstToIrLowerer
 		return _module;
 	}
 
-	private IrFunction BuildFunction(IrFunctionId id, string? name, IReadOnlyList<string> parameters, IReadOnlyList<JsStatement> statements, IrFunctionForm form, bool async = false, bool generator = false, int definedArgumentCount = -1, IReadOnlyList<JsExpression?>? parameterDefaults = null, IReadOnlyList<JsBindingPattern>? parameterPatterns = null, IrFunctionId? parentFunction = null, IrScopeId? parentScope = null, IrConstantId? parentConstant = null, SourceLocation declarationLocation = default(SourceLocation), bool hasFunctionNameBinding = false, Func<IrFunction, List<ScopeBuilder>, IrBlock, IrScopeId, IrBlock>? bodyEmitter = null)
+	private IrFunction BuildFunction(IrFunctionId id, string? name, IReadOnlyList<string> parameters, IReadOnlyList<JsStatement> statements, IrFunctionForm form, bool async = false, bool generator = false, int definedArgumentCount = -1, IReadOnlyList<JsExpression?>? parameterDefaults = null, IReadOnlyList<JsBindingPattern>? parameterPatterns = null, IrFunctionId? parentFunction = null, IrScopeId? parentScope = null, IrConstantId? parentConstant = null, SourceLocation declarationLocation = default(SourceLocation), bool hasFunctionNameBinding = false, Func<IrFunction, List<ScopeBuilder>, IrBlock, IrScopeId, IrBlock>? bodyEmitter = null, IReadOnlySet<string>? protectionTags = null)
 	{
 		FinallyContext[] collection = _activeFinallyBlocks.ToArray();
 		JsForInOfStatement[] collection2 = _activeIteratorLoops.ToArray();
@@ -124,7 +124,7 @@ internal sealed class AstToIrLowerer
 		bool flag9 = form - 3 <= IrFunctionForm.Method;
 		bool hasHomeObject = flag9;
 		bool isGlobalVariableEnvironment = form - 9 <= IrFunctionForm.Expression;
-		IrFunction ecmaIrFunction = new IrFunction(id, name, new IrFunctionOptions(kind, form2, strict, hasPrototype, hasSimpleParameterList, hasParameterExpressions, hasThisBinding, hasArgumentsBinding, newTargetAllowed, superCallAllowed, superAllowed, argumentsAllowed, hasHomeObject, IsEval: false, isGlobalVariableEnvironment), ecmaScopeId, bodyScope, new IrBlockId(0), parentFunction, parentScope, parentConstant, checked((ushort)((definedArgumentCount < 0) ? parameters.Count : definedArgumentCount)), declarationLocation);
+		IrFunction ecmaIrFunction = new IrFunction(id, name, new IrFunctionOptions(kind, form2, strict, hasPrototype, hasSimpleParameterList, hasParameterExpressions, hasThisBinding, hasArgumentsBinding, newTargetAllowed, superCallAllowed, superAllowed, argumentsAllowed, hasHomeObject, IsEval: false, isGlobalVariableEnvironment), ecmaScopeId, bodyScope, new IrBlockId(0), parentFunction, parentScope, parentConstant, checked((ushort)((definedArgumentCount < 0) ? parameters.Count : definedArgumentCount)), declarationLocation, protectionTags);
 		_module.Functions.Add(ecmaIrFunction);
 		List<ScopeBuilder> list = new List<ScopeBuilder>
 		{
@@ -925,7 +925,7 @@ internal sealed class AstToIrLowerer
 															IrConstantId ecmaConstantId = new IrConstantId(function.Constants.Count);
 															IrFunctionId ecmaFunctionId = new IrFunctionId(_nextFunction++);
 															function.Constants.Add(new IrFunctionConstant(ecmaConstantId, ecmaFunctionId));
-															BuildFunction(ecmaFunctionId, jsFunctionStatement.Name, jsFunctionStatement.Parameters, jsFunctionStatement.Body.Body, IrFunctionForm.Declaration, jsFunctionStatement.Async, jsFunctionStatement.Generator, jsFunctionStatement.DefinedArgCount, jsFunctionStatement.ParameterDefaults, jsFunctionStatement.ParameterPatterns, function.Id, scope, ecmaConstantId, Location(jsFunctionStatement));
+											BuildFunction(ecmaFunctionId, jsFunctionStatement.Name, jsFunctionStatement.Parameters, jsFunctionStatement.Body.Body, IrFunctionForm.Declaration, jsFunctionStatement.Async, jsFunctionStatement.Generator, jsFunctionStatement.DefinedArgCount, jsFunctionStatement.ParameterDefaults, jsFunctionStatement.ParameterPatterns, function.Id, scope, ecmaConstantId, Location(jsFunctionStatement), protectionTags: jsFunctionStatement.ProtectionTags);
 															if (flag)
 															{
 																block.Instructions.Add(new IrInstruction("block_function_initializer", new ReadOnlyArray<IrOperand>(new IrOperand[3]
@@ -973,7 +973,7 @@ internal sealed class AstToIrLowerer
 																IrConstantId ecmaConstantId2 = new IrConstantId(function.Constants.Count);
 																IrFunctionId ecmaFunctionId2 = new IrFunctionId(_nextFunction++);
 																function.Constants.Add(new IrFunctionConstant(ecmaConstantId2, ecmaFunctionId2));
-																BuildFunction(ecmaFunctionId2, jsFunctionStatement2.Name, jsFunctionStatement2.Parameters, jsFunctionStatement2.Body.Body, IrFunctionForm.Declaration, jsFunctionStatement2.Async, jsFunctionStatement2.Generator, jsFunctionStatement2.DefinedArgCount, jsFunctionStatement2.ParameterDefaults, jsFunctionStatement2.ParameterPatterns, function.Id, scope, ecmaConstantId2, Location(jsFunctionStatement2));
+												BuildFunction(ecmaFunctionId2, jsFunctionStatement2.Name, jsFunctionStatement2.Parameters, jsFunctionStatement2.Body.Body, IrFunctionForm.Declaration, jsFunctionStatement2.Async, jsFunctionStatement2.Generator, jsFunctionStatement2.DefinedArgCount, jsFunctionStatement2.ParameterDefaults, jsFunctionStatement2.ParameterPatterns, function.Id, scope, ecmaConstantId2, Location(jsFunctionStatement2), protectionTags: jsFunctionStatement2.ProtectionTags);
 																Emit(block, "fclosure", jsFunctionStatement2, new IrConstantOperand(ecmaConstantId2));
 																if (flag5)
 																{
@@ -3023,7 +3023,7 @@ internal sealed class AstToIrLowerer
 																					IrConstantId ecmaConstantId = new IrConstantId(function.Constants.Count);
 																					IrFunctionId ecmaFunctionId = new IrFunctionId(_nextFunction++);
 																					function.Constants.Add(new IrFunctionConstant(ecmaConstantId, ecmaFunctionId));
-																					BuildFunction(ecmaFunctionId, jsFunctionExpression.Name, jsFunctionExpression.Parameters, jsFunctionExpression.Body.Body, (!jsFunctionExpression.Arrow) ? IrFunctionForm.Expression : IrFunctionForm.Arrow, jsFunctionExpression.Async, jsFunctionExpression.Generator, jsFunctionExpression.DefinedArgCount, jsFunctionExpression.ParameterDefaults, jsFunctionExpression.ParameterPatterns, function.Id, scope, ecmaConstantId, Location(jsFunctionExpression), jsFunctionExpression.Name != null);
+											BuildFunction(ecmaFunctionId, jsFunctionExpression.Name, jsFunctionExpression.Parameters, jsFunctionExpression.Body.Body, (!jsFunctionExpression.Arrow) ? IrFunctionForm.Expression : IrFunctionForm.Arrow, jsFunctionExpression.Async, jsFunctionExpression.Generator, jsFunctionExpression.DefinedArgCount, jsFunctionExpression.ParameterDefaults, jsFunctionExpression.ParameterPatterns, function.Id, scope, ecmaConstantId, Location(jsFunctionExpression), jsFunctionExpression.Name != null, protectionTags: jsFunctionExpression.ProtectionTags);
 																					block.Instructions.Add(new IrInstruction("fclosure", new ReadOnlySingleElementList<IrOperand>(new IrConstantOperand(ecmaConstantId)), Location(jsFunctionExpression)));
 																				}
 																			}
@@ -4447,7 +4447,7 @@ internal sealed class AstToIrLowerer
 				{
 				}
 				IrFunctionForm form = ecmaFunctionForm;
-				BuildFunction(ecmaFunctionId, null, jsFunctionExpression.Parameters, jsFunctionExpression.Body.Body, form, jsFunctionExpression.Async, jsFunctionExpression.Generator, jsFunctionExpression.DefinedArgCount, jsFunctionExpression.ParameterDefaults, jsFunctionExpression.ParameterPatterns, function.Id, scope, ecmaConstantId, Location(jsFunctionExpression));
+				BuildFunction(ecmaFunctionId, null, jsFunctionExpression.Parameters, jsFunctionExpression.Body.Body, form, jsFunctionExpression.Async, jsFunctionExpression.Generator, jsFunctionExpression.DefinedArgCount, jsFunctionExpression.ParameterDefaults, jsFunctionExpression.ParameterPatterns, function.Id, scope, ecmaConstantId, Location(jsFunctionExpression), protectionTags: jsFunctionExpression.ProtectionTags);
 				Emit(block, "fclosure", property, new IrConstantOperand(ecmaConstantId));
 				JsObjectPropertyKind kind2 = property.Kind;
 				if (1 == 0)

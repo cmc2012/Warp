@@ -68,7 +68,13 @@ public sealed record BytecodeAssemblyInstruction(
     TargetOpcodeDescriptor Opcode,
     BytecodeAssemblyOperand? Operand = null,
     BytecodeAssemblySourceLocation Location = default,
-    bool PreserveAfterResolution = false);
+    bool PreserveAfterResolution = false)
+{
+    /// <summary>Creates a target-ABI instruction for an external assembly pass.</summary>
+    public static BytecodeAssemblyInstruction Create(string opcode, BytecodeAssemblyOperand? operand = null,
+        BytecodeAssemblySourceLocation location = default, bool preserveAfterResolution = false) =>
+        new(TargetOpcodeCatalog.Get(opcode), operand, location, preserveAfterResolution);
+}
 
 /// <summary>An atom use anchored to a stable instruction, not a byte offset.</summary>
 public sealed record BytecodeAssemblyAtomRelocation(
@@ -141,7 +147,8 @@ public sealed record BytecodeAssemblyFunctionMetadata(
     IReadOnlyList<BytecodeAssemblyLocal>? Locals = null,
     IReadOnlyList<BytecodeAssemblyClosure>? Closures = null,
     bool SerializeVariableDefinitions = true,
-    ushort? VariableCount = null);
+    ushort? VariableCount = null,
+    IReadOnlySet<string>? ProtectionTags = null);
 
 public sealed record BytecodeAssemblyFunction(
     BytecodeAssemblyFunctionId Id,

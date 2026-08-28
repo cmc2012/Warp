@@ -14,16 +14,18 @@ internal static class JavaScriptCompilerPipeline
 {
     internal static byte[] Compile(JavaScriptProgram program, bool stripDebugInfo, bool minifyLocalBindings,
         IEnumerable<IIrPass>? externalIrPasses = null,
+        IEnumerable<IPostPseudoIrPass>? externalPostPseudoIrPasses = null,
         IEnumerable<IBytecodeAssemblyPass>? externalAssemblyPasses = null)
     {
         ArgumentNullException.ThrowIfNull(program);
 
         var unresolved = new ProgramIrLowerer().Run(program);
-        return CompileIr(program, unresolved, stripDebugInfo, minifyLocalBindings, externalIrPasses, externalAssemblyPasses);
+        return CompileIr(program, unresolved, stripDebugInfo, minifyLocalBindings, externalIrPasses, externalPostPseudoIrPasses, externalAssemblyPasses);
     }
 
     internal static byte[] CompileIr(JavaScriptProgram program, IrModule unresolved, bool stripDebugInfo, bool minifyLocalBindings,
         IEnumerable<IIrPass>? externalIrPasses = null,
+        IEnumerable<IPostPseudoIrPass>? externalPostPseudoIrPasses = null,
         IEnumerable<IBytecodeAssemblyPass>? externalAssemblyPasses = null)
     {
         // Module grammar is strict.  Keep the validation in the production
@@ -33,7 +35,7 @@ internal static class JavaScriptCompilerPipeline
         if (program.Kind == Api.JavaScriptSourceKind.Module)
             new JavaScriptStrictBindingValidator(program.FileName).ValidateModule(program.Ast);
 
-        var passes = ProductionPassFactory.Create(program, stripDebugInfo, minifyLocalBindings, externalIrPasses, externalAssemblyPasses);
+        var passes = ProductionPassFactory.Create(program, stripDebugInfo, minifyLocalBindings, externalIrPasses, externalPostPseudoIrPasses, externalAssemblyPasses);
         CompilerPassPipeline.RunIrPasses(unresolved, passes);
         return BytecodeEmissionPass.Run(unresolved, passes);
     }

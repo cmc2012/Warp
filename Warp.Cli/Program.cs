@@ -225,16 +225,22 @@ var jsGraphOption = new Option<bool>("--graph")
 {
     Description = "Resolve relative static imports and write the complete module graph to the output directory",
 };
+var jsPassOption = new Option<string[]>("--pass")
+{
+    Description = "Path to an external JavaScript compiler pass assembly (repeatable)",
+};
 jsCompileCommand.Arguments.Add(jsInputArgument);
 jsCompileCommand.Options.Add(jsOutputOption);
 jsCompileCommand.Options.Add(jsKindOption);
 jsCompileCommand.Options.Add(jsGraphOption);
+jsCompileCommand.Options.Add(jsPassOption);
 jsCompileCommand.SetAction(async (parseResult, _) =>
 {
     var input = parseResult.GetValue(jsInputArgument)!;
     var output = parseResult.GetValue(jsOutputOption);
     var kindText = parseResult.GetValue(jsKindOption)!;
     var graph = parseResult.GetValue(jsGraphOption);
+    var passPaths = parseResult.GetValue(jsPassOption) ?? [];
     if (!Enum.TryParse<JavaScriptSourceKind>(kindText, ignoreCase: true, out var kind))
     {
         Console.Error.WriteLine("--kind must be auto, script, or module.");
@@ -252,11 +258,13 @@ jsCompileCommand.SetAction(async (parseResult, _) =>
     {
         var source = File.ReadAllText(inputPath);
         var fileName = Path.GetRelativePath(Directory.GetCurrentDirectory(), inputPath).Replace(Path.DirectorySeparatorChar, '/');
-        var compiler = new JavaScriptCompiler(new JavaScriptCompilerOptions
+        var compilerOptions = new JavaScriptCompilerOptions
         {
             WarningSink = warning => Console.Error.WriteLine(
                 $"{warning.FileName}:{warning.Line}:{warning.Column}: warning {warning.Code}: {warning.Message}"),
-        });
+        };
+        foreach (var passPath in passPaths) compilerOptions.ExternalPassAssemblyPaths.Add(passPath);
+        var compiler = new JavaScriptCompiler(compilerOptions);
         var parent = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
         if (!graph)

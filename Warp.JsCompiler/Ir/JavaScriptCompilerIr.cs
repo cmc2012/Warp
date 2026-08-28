@@ -194,7 +194,8 @@ public sealed class IrFunction(
     IrScopeId? parentScope = null,
     IrConstantId? parentConstant = null,
     ushort definedArgumentCount = 0,
-    SourceLocation declarationLocation = default)
+    SourceLocation declarationLocation = default,
+    IReadOnlySet<string>? protectionTags = null)
 {
     public IrFunctionId Id { get; } = id;
     public string? Name { get; } = name;
@@ -219,6 +220,8 @@ public sealed class IrFunction(
     }
     public ushort DefinedArgumentCount { get; } = definedArgumentCount;
     public SourceLocation DeclarationLocation { get; } = declarationLocation;
+    /// <summary>Pass-owned, non-serialized protection policy carried from AST to assembly.</summary>
+    public IReadOnlySet<string> ProtectionTags { get; } = protectionTags ?? new HashSet<string>(StringComparer.Ordinal);
     public List<IrScope> Scopes { get; } = [];
     public List<IrBinding> Bindings { get; } = [];
     public List<IrConstant> Constants { get; } = [];

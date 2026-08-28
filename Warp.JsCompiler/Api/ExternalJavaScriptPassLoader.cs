@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.Loader;
 using ReflectionAssembly = System.Reflection.Assembly;
 using Warp.JsCompiler.Assembly.Passes;
+using Warp.JsCompiler.Frontend;
 using Warp.JsCompiler.Ir.Passes;
 
 namespace Warp.JsCompiler.Api;
@@ -10,7 +11,10 @@ internal static class ExternalJavaScriptPassLoader
 {
     internal static ExternalPasses Load(IEnumerable<string> assemblyPaths)
     {
+        var astPasses = new List<IJavaScriptAstPass>();
+        var contextualAstPasses = new List<IJavaScriptAstPassWithContext>();
         var irPasses = new List<IIrPass>();
+        var postPseudoIrPasses = new List<IPostPseudoIrPass>();
         var moduleGraphPasses = new List<IModuleGraphPass>();
         var assemblyPasses = new List<IBytecodeAssemblyPass>();
         foreach (var assemblyPath in assemblyPaths)
@@ -25,16 +29,19 @@ internal static class ExternalJavaScriptPassLoader
             var assembly = new ExternalPassLoadContext(fullPath).LoadFromAssemblyPath(fullPath);
             foreach (var type in GetLoadableTypes(assembly)
                          .Where(type => type is { IsAbstract: false, IsInterface: false, IsPublic: true }
-                             && (typeof(IIrPass).IsAssignableFrom(type) || typeof(IModuleGraphPass).IsAssignableFrom(type) || typeof(IBytecodeAssemblyPass).IsAssignableFrom(type))))
+                             && (typeof(IJavaScriptAstPass).IsAssignableFrom(type) || typeof(IJavaScriptAstPassWithContext).IsAssignableFrom(type) || typeof(IIrPass).IsAssignableFrom(type) || typeof(IPostPseudoIrPass).IsAssignableFrom(type) || typeof(IModuleGraphPass).IsAssignableFrom(type) || typeof(IBytecodeAssemblyPass).IsAssignableFrom(type))))
             {
                 if (Activator.CreateInstance(type) is not { } pass)
                     throw new InvalidOperationException($"Could not create external pass '{type.FullName}'.");
+                if (pass is IJavaScriptAstPass astPass) astPasses.Add(astPass);
+                if (pass is IJavaScriptAstPassWithContext contextualAstPass) contextualAstPasses.Add(contextualAstPass);
                 if (pass is IIrPass irPass) irPasses.Add(irPass);
+                if (pass is IPostPseudoIrPass postPseudoIrPass) postPseudoIrPasses.Add(postPseudoIrPass);
                 if (pass is IModuleGraphPass graphPass) moduleGraphPasses.Add(graphPass);
                 if (pass is IBytecodeAssemblyPass assemblyPass) assemblyPasses.Add(assemblyPass);
             }
         }
-        return new ExternalPasses(irPasses, moduleGraphPasses, assemblyPasses);
+        return new ExternalPasses(astPasses, contextualAstPasses, irPasses, postPseudoIrPasses, moduleGraphPasses, assemblyPasses);
     }
 
     private static IEnumerable<Type> GetLoadableTypes(ReflectionAssembly assembly)
@@ -63,6 +70,8 @@ internal static class ExternalJavaScriptPassLoader
     }
 }
 
-internal sealed record ExternalPasses(IReadOnlyList<IIrPass> Ir,
+internal sealed record ExternalPasses(IReadOnlyList<IJavaScriptAstPass> Ast, IReadOnlyList<IJavaScriptAstPassWithContext> ContextualAst,
+    IReadOnlyList<IIrPass> Ir,
+    IReadOnlyList<IPostPseudoIrPass> PostPseudoIr,
     IReadOnlyList<IModuleGraphPass> ModuleGraph,
     IReadOnlyList<IBytecodeAssemblyPass> Assembly);

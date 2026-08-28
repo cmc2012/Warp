@@ -4,7 +4,7 @@ namespace Warp.JsCompiler.Ir.Passes;
 /// Shortens function-local bindings after pseudo bindings exist but before slot
 /// and closure resolution.
 /// </summary>
-internal sealed class LocalBindingMinificationPass(bool includeModuleBindings = false) : IIrPass
+public sealed class LocalBindingMinificationPass(bool includeModuleBindings = false) : IIrPass
 {
     private readonly bool _includeModuleBindings = includeModuleBindings;
     private static readonly HashSet<string> RuntimeNames = new(StringComparer.Ordinal)

@@ -12,6 +12,7 @@ internal static class ProductionPassFactory
 {
     internal static CompilerPasses Create(JavaScriptProgram program, bool stripDebugInfo, bool minifyLocalBindings,
         IEnumerable<IIrPass>? externalIrPasses = null,
+        IEnumerable<IPostPseudoIrPass>? externalPostPseudoIrPasses = null,
         IEnumerable<IBytecodeAssemblyPass>? externalAssemblyPasses = null)
     {
         var assembly = new List<IBytecodeAssemblyPass>();
@@ -25,9 +26,14 @@ internal static class ProductionPassFactory
         assembly.Add(new BytecodePeepholePass());
         assembly.AddRange(externalAssemblyPasses ?? []);
         return new CompilerPasses(
-            ir: (externalIrPasses ?? []).Concat(minifyLocalBindings
-                ? [new PseudoBindingPass(), new LocalBindingMinificationPass(), new ConstantControlFlowPass()]
-                : [new PseudoBindingPass(), new ConstantControlFlowPass()]),
+            ir: (externalIrPasses ?? []).Concat([new PseudoBindingPass()])
+                .Concat(externalPostPseudoIrPasses?.Select(pass => new PostPseudoAdapter(pass)) ?? [])
+                .Concat(minifyLocalBindings ? [new LocalBindingMinificationPass(), new ConstantControlFlowPass()] : [new ConstantControlFlowPass()]),
             assembly: assembly);
+    }
+
+    private sealed class PostPseudoAdapter(IPostPseudoIrPass pass) : IIrPass
+    {
+        public void Run(Warp.JsCompiler.Ir.IrModule module) => pass.Run(module);
     }
 }

@@ -26,8 +26,7 @@ public sealed class JavaScriptCompiler
         request.Validate();
 
         var kind = DetectKind(request);
-        var frontend = new JavaScriptFrontEnd(request.Source, request.FileName, kind);
-        var program = frontend.Parse();
+        var program = ApplyAstPasses(new JavaScriptFrontEnd(request.Source, request.FileName, kind).Parse());
         if (program.StaticImports.Count != 0)
         {
             var import = program.StaticImports[0];
@@ -37,7 +36,8 @@ public sealed class JavaScriptCompiler
         }
 
         return new JavaScriptBytecode(JavaScriptCompilerPipeline.Compile(
-            program, request.StripDebugInfo, request.MinifyLocalBindings, _externalPasses.Ir, _externalPasses.Assembly), request.FileName, kind);
+            program, request.StripDebugInfo, request.MinifyLocalBindings,
+            _externalPasses.Ir, _externalPasses.PostPseudoIr, _externalPasses.Assembly), request.FileName, kind);
     }
 
     public JavaScriptModuleGraph CompileModuleGraph(JavaScriptCompilationRequest entry, IJavaScriptModuleResolver resolver)
@@ -64,7 +64,7 @@ public sealed class JavaScriptCompiler
         foreach (var pass in _externalPasses.ModuleGraph) pass.Run(graph);
         var bytecode = modules.ToDictionary(pair => pair.Key, pair => new JavaScriptBytecode(JavaScriptCompilerPipeline.CompileIr(
             pair.Value.Program, graph.Modules[pair.Key], pair.Value.Request.StripDebugInfo, pair.Value.Request.MinifyLocalBindings,
-            _externalPasses.Ir, _externalPasses.Assembly), pair.Key, pair.Value.Kind), StringComparer.Ordinal);
+            _externalPasses.Ir, _externalPasses.PostPseudoIr, _externalPasses.Assembly), pair.Key, pair.Value.Kind), StringComparer.Ordinal);
         return new JavaScriptModuleGraph(bytecode, warnings);
     }
 
@@ -76,7 +76,7 @@ public sealed class JavaScriptCompiler
         if (!visiting.Add(request.FileName)) return; // ES modules permit cycles.
 
         var kind = DetectKind(request);
-        var program = new JavaScriptFrontEnd(request.Source, request.FileName, kind).Parse();
+        var program = ApplyAstPasses(new JavaScriptFrontEnd(request.Source, request.FileName, kind).Parse());
         var dependencies = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var import in program.StaticImports)
         {
@@ -105,6 +105,21 @@ public sealed class JavaScriptCompiler
 
         modules.Add(request.FileName, new LoadedModule(request, program, kind, dependencies));
         visiting.Remove(request.FileName);
+    }
+
+    private JavaScriptProgram ApplyAstPasses(JavaScriptProgram program)
+    {
+        foreach (var pass in _externalPasses.Ast)
+            program = program with { Ast = pass.Run(program.Ast) ??
+                throw new InvalidOperationException($"AST pass {pass.GetType().Name} returned null.") };
+        var context = new JavaScriptAstPassContext(program.Source, program.FileName, program.Kind);
+        foreach (var pass in _externalPasses.ContextualAst)
+            program = program with { Ast = pass.Run(program.Ast, context) ??
+                throw new InvalidOperationException($"AST pass {pass.GetType().Name} returned null.") };
+        // External AST passes may introduce lexical bindings.  Their output is
+        // canonical AST, so rebuild scope metadata before lowering rather than
+        // leaving the parser's pre-transform analysis attached to it.
+        return program with { Scopes = new JavaScriptScopeAnalyzer(program.FileName).Analyze(program.Ast) };
     }
 
     private sealed record LoadedModule(JavaScriptCompilationRequest Request, JavaScriptProgram Program, JavaScriptSourceKind Kind,

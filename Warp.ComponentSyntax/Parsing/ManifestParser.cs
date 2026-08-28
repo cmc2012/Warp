@@ -59,10 +59,31 @@ public sealed class ManifestParser
                     sink.Warning("manifest: config.minifyIdentifiers must be true or false; defaulting to true");
                     minifyIdentifiers = true;
                 }
+                var passes = new List<string>();
+                if (configMap.TryGetValue("passes", out var rawPasses))
+                {
+                    if (rawPasses is not IEnumerable<object> passValues || rawPasses is string)
+                    {
+                        sink.Warning("manifest: config.passes must be a list of assembly paths; ignoring it");
+                    }
+                    else
+                    {
+                        foreach (var rawPass in passValues)
+                        {
+                            if (rawPass is null || string.IsNullOrWhiteSpace(rawPass.ToString()))
+                            {
+                                sink.Warning("manifest: config.passes entries must be non-empty assembly paths; ignoring an entry");
+                                continue;
+                            }
+                            passes.Add(rawPass.ToString()!);
+                        }
+                    }
+                }
                 config = new ManifestConfig(
                     configMap.TryGetValue("logLevel", out var logLevel) ? logLevel?.ToString() ?? "log" : "log",
                     configMap.TryGetValue("designWidth", out var designWidth) ? designWidth?.ToString() ?? "device-width" : "device-width",
-                    minifyIdentifiers);
+                    minifyIdentifiers,
+                    passes);
             }
 
             var router = new ManifestRouter("pages/index", new Dictionary<string, ManifestPage>());

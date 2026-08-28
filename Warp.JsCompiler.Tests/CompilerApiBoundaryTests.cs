@@ -73,6 +73,20 @@ public sealed class CompilerApiBoundaryTests
     }
 
     [Fact]
+    public void Compiles_top_level_lexical_compound_updates()
+    {
+        var bytes = Compile("let total = 0; total += 1; total -= 2; globalThis.result = total;", "globals.js").Bytes;
+        Assert.NotEmpty(bytes);
+    }
+
+    [Fact]
+    public void Compiles_discarded_postfix_loop_update()
+    {
+        var bytes = Compile("let total = 0; for (let index = 0; index < 5; index++) total += index; globalThis.result = total;", "postfix.js").Bytes;
+        Assert.NotEmpty(bytes);
+    }
+
+    [Fact]
     public void File_name_participates_in_unstripped_serialized_bytecode()
     {
         var first = Compile("const value = 1;", "first.js", stripDebugInfo: false).Bytes;

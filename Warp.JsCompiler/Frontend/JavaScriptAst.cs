@@ -38,7 +38,7 @@ public sealed record JsLabeledStatement(string Label, JsStatement Body, int Line
 public sealed record JsWithStatement(JsExpression Object, JsStatement Body, int Line, int Column) : JsStatement(Line, Column);
 public sealed record JsBreakStatement(string? Label, int Line, int Column) : JsStatement(Line, Column);
 public sealed record JsContinueStatement(string? Label, int Line, int Column) : JsStatement(Line, Column);
-public sealed record JsFunctionStatement(string Name, IReadOnlyList<string> Parameters, JsBlockStatement Body, bool Async, int Line, int Column, bool Generator = false, int DefinedArgCount = -1, IReadOnlyList<JsExpression?>? ParameterDefaults = null, bool IsNamedExpression = false, IReadOnlyList<JsBindingPattern>? ParameterPatterns = null) : JsStatement(Line, Column);
+public sealed record JsFunctionStatement(string Name, IReadOnlyList<string> Parameters, JsBlockStatement Body, bool Async, int Line, int Column, bool Generator = false, int DefinedArgCount = -1, IReadOnlyList<JsExpression?>? ParameterDefaults = null, bool IsNamedExpression = false, IReadOnlyList<JsBindingPattern>? ParameterPatterns = null, IReadOnlySet<string>? ProtectionTags = null) : JsStatement(Line, Column);
 public enum JsImportBindingKind { Default, Named, Namespace }
 public sealed record JsImportBinding(string LocalName, string ImportName, JsImportBindingKind Kind, int Line, int Column) : JsAstNode(Line, Column);
 public sealed record JsImportStatement(string Specifier, IReadOnlyList<JsImportBinding> Bindings, int Line, int Column) : JsStatement(Line, Column);
@@ -61,7 +61,7 @@ public sealed record JsConditionalExpression(JsExpression Test, JsExpression Con
 public sealed record JsMemberExpression(JsExpression Object, JsExpression Property, bool Computed, int Line, int Column, bool Optional = false) : JsExpression(Line, Column);
 public sealed record JsCallExpression(JsExpression Callee, IReadOnlyList<JsExpression> Arguments, int Line, int Column,
     bool Optional = false, bool DirectOptional = false) : JsExpression(Line, Column);
-public sealed record JsFunctionExpression(string? Name, IReadOnlyList<string> Parameters, JsBlockStatement Body, bool Async, bool Arrow, int Line, int Column, bool Generator = false, int DefinedArgCount = -1, IReadOnlyList<JsExpression?>? ParameterDefaults = null, bool IsNamedExpression = false, IReadOnlyList<JsBindingPattern>? ParameterPatterns = null) : JsExpression(Line, Column);
+public sealed record JsFunctionExpression(string? Name, IReadOnlyList<string> Parameters, JsBlockStatement Body, bool Async, bool Arrow, int Line, int Column, bool Generator = false, int DefinedArgCount = -1, IReadOnlyList<JsExpression?>? ParameterDefaults = null, bool IsNamedExpression = false, IReadOnlyList<JsBindingPattern>? ParameterPatterns = null, IReadOnlySet<string>? ProtectionTags = null) : JsExpression(Line, Column);
 public sealed record JsClassExpression(string? Name, JsExpression? SuperClass, IReadOnlyList<JsClassMember> Members, int Line, int Column) : JsExpression(Line, Column);
 public sealed record JsNewExpression(JsExpression Callee, IReadOnlyList<JsExpression> Arguments, int Line, int Column) : JsExpression(Line, Column);
 /// <summary>The lexical <c>new.target</c> meta-property.</summary>

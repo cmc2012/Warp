@@ -23,7 +23,10 @@ public sealed record ManifestConfig(
     [property: JsonPropertyName("designWidth")] string DesignWidth,
     // This affects compiler passes only and is deliberately not part of the
     // device runtime manifest.
-    [property: JsonIgnore] bool MinifyIdentifiers = true);
+    [property: JsonIgnore] bool MinifyIdentifiers = true,
+    // Paths to compiler-pass assemblies. These are build-machine inputs, not
+    // device manifest data, so they must never be emitted into manifest.json.
+    [property: JsonIgnore] IReadOnlyList<string>? Passes = null);
 public sealed record ManifestRouter(
     [property: JsonPropertyName("entry")] string Entry,
     [property: JsonPropertyName("pages")] IReadOnlyDictionary<string, ManifestPage> Pages);

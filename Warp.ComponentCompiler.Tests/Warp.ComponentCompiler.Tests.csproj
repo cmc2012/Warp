@@ -7,6 +7,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../TestSupport/TestWorkspace.cs" Link="TestSupport/TestWorkspace.cs" />
     <ProjectReference Include="../Warp.ComponentCompiler/Warp.ComponentCompiler.csproj" />
     <ProjectReference Include="../Warp.ComponentSyntax/Warp.ComponentSyntax.csproj" />
     <ProjectReference Include="../Warp.JsCompiler/Warp.JsCompiler.csproj" />

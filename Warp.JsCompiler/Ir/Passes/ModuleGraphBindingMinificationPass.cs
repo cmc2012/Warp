@@ -116,8 +116,12 @@ internal sealed class InternalModuleExportMinificationPass : IModuleGraphPass
     private static IrExport RenameExport(IrExport export, IReadOnlyDictionary<string, string> names)
         => names.TryGetValue(export.ExportName, out var renamed) ? export switch
         {
-            IrLocalExport local => local with { Name = renamed },
-            IrIndirectExport indirect => indirect with { Name = renamed },
+            // ExportName belongs to IrExport's primary constructor. Updating
+            // only the derived record property via `with` leaves that base
+            // value unchanged, which in turn makes bytecode lowering retain
+            // the original runtime export name.
+            IrLocalExport local => new IrLocalExport(local.LocalName, renamed),
+            IrIndirectExport indirect => new IrIndirectExport(indirect.RequiredModuleIndex, indirect.LocalName, renamed),
             _ => export
         } : export;
 

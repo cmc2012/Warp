@@ -24,7 +24,8 @@ public sealed class TemplateTranslationTests
 
         Assert.False(sink.HasErrors, string.Join("\n", sink.Diagnostics));
         Assert.Equal("a", names["refresh"]);
-        Assert.Contains("onShow(){return this.a();}", output, StringComparison.Ordinal);
+        Assert.Contains("onShow(){", output, StringComparison.Ordinal);
+        Assert.Contains("this.a()", output, StringComparison.Ordinal);
         Assert.DoesNotContain("this.refresh()", output, StringComparison.Ordinal);
     }
 

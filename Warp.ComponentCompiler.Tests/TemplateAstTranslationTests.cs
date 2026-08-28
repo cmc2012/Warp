@@ -6,6 +6,7 @@ using Warp.ComponentSyntax.Parsing;
 using Warp.Diagnostics;
 using Warp.JsCompiler.Api;
 using Warp.JsCompiler.Frontend;
+using Warp.Testing;
 using Xunit;
 
 namespace Warp.ComponentCompiler.Tests;
@@ -120,8 +121,7 @@ public sealed class TemplateAstTranslationTests
     [Fact]
     public void Imports_xaml_style_resources_and_reports_cycles()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "warp-style-import-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        var directory = TestWorkspace.CreateDirectory("warp-style-import");
         var pagePath = Path.Combine(directory, "page.wxaml");
         var resourcePath = Path.Combine(directory, "shared.wxaml");
         try

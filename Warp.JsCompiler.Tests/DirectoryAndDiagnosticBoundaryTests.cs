@@ -1,4 +1,5 @@
 using Warp.JsCompiler.Api;
+using Warp.Testing;
 using Xunit;
 
 namespace Warp.JsCompiler.Tests;
@@ -268,7 +269,7 @@ public sealed class DirectoryAndDiagnosticBoundaryTests
 
     private sealed class TempTree : IDisposable
     {
-        private readonly string _root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "warp-directory-tests", Guid.NewGuid().ToString("N"));
+        private readonly string _root = TestWorkspace.CreateDirectory("warp-directory-tests");
 
         public string Path(string relative) => System.IO.Path.Combine(_root, relative.Replace('/', System.IO.Path.DirectorySeparatorChar));
 

@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json.Nodes;
+using Warp.Testing;
 using Xunit;
 
 namespace Warp.Packaging.Tests;
@@ -14,7 +15,7 @@ public sealed class RpkPackagerTests
     [Fact]
     public async Task Packages_build_files_and_emits_a_signed_archive()
     {
-        var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
+        var root = TestWorkspace.CreateDirectory("warp-package");
         var build = Path.Combine(root, "build");
         var output = Path.Combine(root, "app.rpk");
         try
@@ -58,19 +59,27 @@ public sealed class RpkPackagerTests
     [Fact]
     public async Task Reports_a_missing_build_directory_without_creating_an_archive()
     {
+        var root = TestWorkspace.CreateDirectory("warp-missing-build");
         var sink = new DiagnosticSink();
-        var output = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".rpk");
-        var result = await new RpkPackager(sink).PackAsync(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()), output, TestContext.Current.CancellationToken);
+        var output = Path.Combine(root, "output.rpk");
+        try
+        {
+            var result = await new RpkPackager(sink).PackAsync(Path.Combine(root, "missing"), output, TestContext.Current.CancellationToken);
 
-        Assert.Equal("", result);
-        Assert.True(sink.HasErrors);
-        Assert.False(File.Exists(output));
+            Assert.Equal("", result);
+            Assert.True(sink.HasErrors);
+            Assert.False(File.Exists(output));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
     public async Task Uses_project_debug_signing_material_when_present()
     {
-        var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
+        var root = TestWorkspace.CreateDirectory("warp-package");
         var build = Path.Combine(root, "build");
         var output = Path.Combine(root, "app.rpk");
         try
@@ -101,7 +110,7 @@ public sealed class RpkPackagerTests
     [Fact]
     public async Task Rejects_a_build_without_an_app_entry()
     {
-        var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
+        var root = TestWorkspace.CreateDirectory("warp-package");
         var output = Path.Combine(root, "app.rpk");
         try
         {
@@ -123,7 +132,7 @@ public sealed class RpkPackagerTests
     [Fact]
     public async Task Warns_when_packaging_a_JavaScript_only_build()
     {
-        var root = Path.Combine(Path.GetTempPath(), "warp-package-" + Guid.NewGuid());
+        var root = TestWorkspace.CreateDirectory("warp-package");
         var output = Path.Combine(root, "app.rpk");
         try
         {

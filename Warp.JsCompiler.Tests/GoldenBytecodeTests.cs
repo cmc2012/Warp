@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using Warp.JsCompiler;
 using Warp.JsCompiler.Api;
 using Warp.JsCompiler.Frontend;
+using Warp.Testing;
 using Xunit;
 
 namespace Warp.JsCompiler.Tests;
@@ -127,8 +128,7 @@ internal static class GoldenAssert
     private static byte[]? CompileWithReference(string referencePath, string source, string fileName, JavaScriptSourceKind kind,
         bool allowFailure = false)
     {
-        var directory = Path.Combine(Path.GetTempPath(), "warp-reference-golden", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        var directory = TestWorkspace.CreateDirectory("warp-reference-golden");
         try
         {
             var input = Path.Combine(directory, Path.GetFileName(fileName));

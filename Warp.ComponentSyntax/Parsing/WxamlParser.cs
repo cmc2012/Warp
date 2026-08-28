@@ -10,7 +10,7 @@ public sealed class WxamlParser
 {
     private static readonly HashSet<string> NativeTags = new(StringComparer.OrdinalIgnoreCase)
         {
-            "img", "image", "div", "a", "text", "span", "label", "maml", "slider", "web", "list", "list-item", "slot", "input",
+            "img", "image", "div", "a", "text", "span", "label", "maml", "button", "slider", "web", "list", "list-item", "slot", "input",
             "refresh", "refresh2", "refresh-header", "refresh-footer", "ad", "swiper", "progress", "picker", "switch", "textarea", "video", "camera", "map", "custommarker", "canvas",
             "stack", "richtext", "tabs", "tab-content", "tab-bar", "popup", "rating", "marquee", "scrollview", "drawer", "drawer-navigation", "slide-view", "lottie",
             "section-list", "section-group", "section-header", "section-item", "share-button", "shortcut-button", "qrcode", "scroll", "frame-image", "number-image", "chars-image", "time", "svg", "rect",

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Warp.Testing;
 using Xunit;
 
 namespace Warp.Cli.Tests;
@@ -27,7 +28,7 @@ public sealed class CliSmokeTests
     public async Task Create_generates_a_buildable_hello_world_project()
     {
         var root = FindWorkspaceRoot();
-        var project = Path.Combine(Path.GetTempPath(), "warp-created-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-created");
         try
         {
             var create = await RunCli(root, root, "create", project);
@@ -50,7 +51,7 @@ public sealed class CliSmokeTests
     public async Task Build_and_pack_support_the_same_custom_output_directory()
     {
         var root = FindWorkspaceRoot();
-        var project = Path.Combine(Path.GetTempPath(), "warp-cli-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-cli");
         try
         {
             var page = Path.Combine(project, "src", "pages", "home");

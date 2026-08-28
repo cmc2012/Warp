@@ -1,4 +1,5 @@
 using Warp.ComponentCompiler.Pipeline;
+using Warp.Testing;
 using System.Text.Json;
 using Xunit;
 
@@ -9,7 +10,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Expands_an_explicitly_inline_stateless_component_into_its_host_template()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-inline-component-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-inline-component");
         try
         {
             var page = Path.Combine(project, "src", "pages", "home");
@@ -55,7 +56,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Merges_inline_methods_and_nested_lifecycles_into_the_page()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-inline-behavior-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-inline-behavior");
         try
         {
             var page = Path.Combine(project, "src", "pages", "home");
@@ -107,7 +108,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Projects_inline_props_into_merged_method_bodies_at_each_call_site()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-inline-prop-method-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-inline-prop-method");
         try
         {
             var page = Path.Combine(project, "src", "pages", "home");
@@ -147,7 +148,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Gives_each_inline_import_its_own_method_name_even_when_they_share_a_source_file()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-inline-aliases-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-inline-aliases");
         try
         {
             var page = Path.Combine(project, "src", "pages", "home");
@@ -185,7 +186,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Preserves_method_names_when_a_dynamic_this_member_access_is_present()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-dynamic-method-name-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-dynamic-method-name");
         try
         {
             var page = Path.Combine(project, "src", "pages", "home");
@@ -218,7 +219,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Requires_a_top_level_yaml_manifest()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-manifest-location-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-manifest-location");
         try
         {
             var source = Path.Combine(project, "src");
@@ -240,7 +241,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Removes_stale_bytecode_from_the_generated_output_directory()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-clean-output-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-clean-output");
         try
         {
             var page = Path.Combine(project, "src", "pages", "home");
@@ -275,7 +276,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Builds_a_discovered_page_into_a_parseable_runtime_module()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-pipeline-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-pipeline");
         try
         {
             var pageDirectory = Path.Combine(project, "src", "pages", "home");
@@ -327,7 +328,7 @@ public sealed class WarpPipelineTests
     [Fact]
     public async Task Bundles_relative_script_modules_instead_of_leaving_runtime_relative_requires()
     {
-        var project = Path.Combine(Path.GetTempPath(), "warp-relative-modules-" + Guid.NewGuid());
+        var project = TestWorkspace.CreateDirectory("warp-relative-modules");
         try
         {
             var source = Path.Combine(project, "src");
